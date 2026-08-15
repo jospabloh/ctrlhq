@@ -1,0 +1,40 @@
+{
+  "name": "Expense",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "invoice_status": {
+      "type": "string",
+      "enum": [
+        "pendiente",
+        "recibida",
+        "no_requerida"
+      ],
+      "default": "pendiente"
+    },
+    "invoice_number": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "supplier_name",
+    "amount",
+    "invoice_status"
+  ]
+}

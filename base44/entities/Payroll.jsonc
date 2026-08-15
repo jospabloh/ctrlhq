@@ -1,0 +1,47 @@
+{
+  "name": "Payroll",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "collaborator": {
+      "type": "string"
+    },
+    "base_salary": {
+      "type": "number"
+    },
+    "overtime_hours": {
+      "type": "number",
+      "default": 0
+    },
+    "overtime_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "vacation_days": {
+      "type": "number",
+      "default": 0
+    },
+    "absences": {
+      "type": "number",
+      "default": 0
+    },
+    "deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "total": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "collaborator",
+    "base_salary"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "Income",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "payment_method": {
+      "type": "string"
+    },
+    "sale_type": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "amount",
+    "payment_method"
+  ]
+}

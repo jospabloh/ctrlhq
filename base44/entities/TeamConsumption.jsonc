@@ -1,0 +1,25 @@
+{
+  "name": "TeamConsumption",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "collaborator": {
+      "type": "string"
+    },
+    "dish": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "date",
+    "collaborator",
+    "dish",
+    "amount"
+  ]
+}
