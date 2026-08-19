@@ -137,7 +137,17 @@ export default function Onboarding() {
             <TabsTrigger value="create">Crear negocio</TabsTrigger>
             <TabsTrigger value="join">Unirme con código</TabsTrigger>
           </TabsList>
-          <TabsContent value="create" className="space-y-4">
+          <TabsContent value="create">
+            {/* A real <form>, so Enter submits. These were bare inputs next to a
+                button: typing a name and pressing Enter did nothing, with no
+                hint why. */}
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!loading && businessName.trim()) finishOnboarding("create");
+              }}
+            >
             <p className="text-sm text-muted-foreground">
               Crea tu negocio y quedarás como administrador. Empiezas en periodo de prueba.
             </p>
@@ -153,12 +163,20 @@ export default function Onboarding() {
                 />
               </div>
             </div>
-            <Button className="w-full h-11" disabled={loading || !businessName.trim()} onClick={() => finishOnboarding("create")}>
+            <Button type="submit" className="w-full h-11" disabled={loading || !businessName.trim()}>
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Crear negocio
             </Button>
+            </form>
           </TabsContent>
-          <TabsContent value="join" className="space-y-4">
+          <TabsContent value="join">
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!loading && inviteCode.trim()) finishOnboarding("join");
+              }}
+            >
             <p className="text-sm text-muted-foreground">
               Pide el código de invitación al administrador de tu negocio y únete como personal.
             </p>
@@ -174,10 +192,11 @@ export default function Onboarding() {
                 />
               </div>
             </div>
-            <Button className="w-full h-11" disabled={loading || !inviteCode.trim()} onClick={() => finishOnboarding("join")}>
+            <Button type="submit" className="w-full h-11" disabled={loading || !inviteCode.trim()}>
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Unirme
             </Button>
+            </form>
           </TabsContent>
         </Tabs>
       </div>
