@@ -23,6 +23,47 @@ publishing). This file covers CtrlHQ-specific architecture.
   `business_id`: create a new Business (become `business_admin`) or redeem an
   existing one's `invite_code` (become `staff`).
 
+## Multi-tenancy: one active tenant, many memberships
+
+A user can belong to several businesses — `business_admin` of one, `staff` of
+another. The model deliberately keeps `User.business_id` a **single** value
+meaning *the tenant you are operating in right now*, and adds `Membership`
+(`base44/entities/Membership.jsonc`) as the record of which tenants you may
+enter and as what.
+
+**Why it is built this way.** Every tenant entity's RLS still reads
+`data.business_id == {{user.data.business_id}}`, completely unchanged, so a
+user can only ever touch the one tenant they are currently in. Isolation does
+not get weaker as people join more tenants. The alternative — letting RLS match
+"business_id is in my list of memberships" — would have meant rewriting the
+rules on all 13 tenant entities and relying on `$in` against an array user
+field, which is not a verified Base44 capability; a silent widening of data
+access is exactly the failure mode worth designing out.
+
+- **`Membership`** — `(business_id, user_id, user_email, role)`. Its `read` rule
+  keys the caller's own rows on `{{user.id}}` (from the token) rather than on
+  `business_id`, which is what lets the picker list tenants you are *not*
+  currently in. Seeing a membership grants nothing by itself.
+- **`base44/functions/switch-tenant`** — the only sanctioned way `business_id`
+  changes after onboarding. Re-derives membership server-side from `Membership`
+  (never from the request body, which supplies only the target id), then writes
+  `business_id` and the role that membership grants. Returns the same 403
+  whether the business does not exist or you simply are not in it — a tenant's
+  existence is not something an outsider gets to probe for by id.
+- **`complete-onboarding`** creates a `Membership` alongside the Business, and
+  no longer rejects a caller who already has one: creating or joining an
+  additional tenant is the point. Joining a tenant you are already in is still
+  refused.
+- **`User.role`** always reflects your role in the *active* tenant.
+  The platform owner (`role: "admin"`) is the exception and keeps that role
+  across every switch — see the Backend functions section for why writing role
+  on that account fails and why it would be wrong anyway.
+- **UI** — `src/pages/SelectTenant.jsx` asks which tenant to open, once per
+  session, and only when you have more than one (a single membership skips it).
+  `src/components/TenantSwitcher.jsx` is the sidebar's business name, made a
+  dropdown only when there is somewhere to switch to; switching reloads the
+  page so nothing from the previous tenant survives on screen.
+
 ## Permissions (Module 3)
 
 - `src/lib/permissionRegistry.js` — the `"Section:action"` registry + per-role
