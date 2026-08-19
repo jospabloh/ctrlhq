@@ -165,13 +165,26 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${{ inputs.reset_token }}" || { echo "::error::reset_token is required for phase=purge"; exit 1; }
+          RT='${{ inputs.reset_token }}'
+          # The reset mail ships a SendGrid click-tracking link rather than a
+          # bare code, and the real token only appears after the redirect. Take
+          # either form: resolve a URL here, use a raw token as-is.
+          case "$RT" in
+            http*)
+              FINAL=$(curl -sSL -o /dev/null -w '%{url_effective}' "$RT")
+              echo "resolved to: ${FINAL%%\?*}?<query hidden>"
+              RT=$(printf '%s' "$FINAL" | sed -n 's/.*[?&]token=\([^&]*\).*/\1/p')
+              test -n "$RT" || { echo "::error::no token= in the resolved URL"; exit 1; }
+              echo "extracted a reset token (len ${#RT})"
+              ;;
+          esac
           # Password is minted here and used only within this run.
           PW="$(openssl rand -base64 24)"
 
           code=$(curl -sS -o /tmp/rp.json -w '%{http_code}' \
             -X POST "$API/apps/$APP_ID/auth/reset-password" \
             -H 'Content-Type: application/json' \
-            -d "$(jq -nc --arg t "${{ inputs.reset_token }}" --arg p "$PW" '{reset_token:$t,new_password:$p}')")
+            -d "$(jq -nc --arg t "$RT" --arg p "$PW" '{reset_token:$t,new_password:$p}')")
           echo "reset-password -> HTTP $code"
           test "$code" -lt 400 || { echo "body: $(cat /tmp/rp.json)"; echo "::error::reset failed"; exit 1; }
 
