@@ -16,9 +16,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENTITIES_DIR = path.join(__dirname, "..", "base44", "entities");
 
 // Entities that intentionally have no business_id (the tenant root and the
-// built-in User, which uses {{user.id}} / {{user.data.business_id}} instead
-// of a data.business_id field on itself).
+// built-in User, which is keyed by {{user.id}} rather than by a
+// data.business_id field on itself).
 const NON_TENANT_ENTITIES = new Set(["Business", "User"]);
+
+// The built-in User is not a normal entity — Base44 manages it through the
+// app's authentication system, and an entity-level rls block on it silently
+// breaks writes (see the header comment in base44/entities/User.jsonc for the
+// full incident: onboarding returned HTTP 500 with an empty body because
+// asServiceRole.entities.User.update() hung instead of throwing). Field-level
+// rls on role/business_id is the supported — and the security-relevant — half.
+// stockflow, the portfolio reference app, carries field-level only.
+const NO_ENTITY_RLS_ENTITIES = new Set(["User"]);
 
 function stripJsonComments(text) {
   // Minimal // and /* */ stripper that respects string literals — enough for
@@ -82,6 +91,25 @@ function checkEntity(fileName) {
   const rls = schema.rls || {};
   const ops = ["create", "read", "update", "delete"];
   const isTenantEntity = !NON_TENANT_ENTITIES.has(entityName);
+
+  // Built-in User: an entity-level rls block here breaks writes to it outright.
+  // Field-level rls on role/business_id is required and checked below.
+  if (NO_ENTITY_RLS_ENTITIES.has(entityName)) {
+    if (Object.keys(rls).length > 0) {
+      errors.push(
+        'has an entity-level "rls" block. The built-in User is managed by Base44\'s auth system and does not support one — adding it makes asServiceRole.entities.User.update() hang, so onboarding fails with an empty-bodied HTTP 500. Keep field-level rls on role/business_id only (see this entity\'s header comment).'
+      );
+    }
+    for (const field of ["role", "business_id"]) {
+      const write = schema.properties?.[field]?.rls?.write;
+      if (!write || !hasAdminBranch(write)) {
+        errors.push(
+          `property "${field}" is missing its field-level rls.write lock to {"user_condition":{"role":"admin"}} — without it any user can escalate via auth.updateMe({${field}: ...}).`
+        );
+      }
+    }
+    return { entityName, errors, warnings };
+  }
 
   // Entity-side custom field paths must be data.-prefixed, never bare.
   const raw = JSON.stringify(rls);
