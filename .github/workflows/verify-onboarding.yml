@@ -213,13 +213,38 @@ jobs:
         if: inputs.phase == 'multitenant'
         run: |
           set -euo pipefail
-          test -n "${{ inputs.otp }}" || { echo "::error::otp is required for phase=multitenant"; exit 1; }
-
-          code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' \
-            -X POST "$API/apps/$APP_ID/auth/verify-otp" -H 'Content-Type: application/json' \
-            -d "$(jq -nc --arg e "${{ inputs.email }}" --arg c "${{ inputs.otp }}" '{email:$e,otp_code:$c}')")
-          test "$code" -lt 400 || { cat /tmp/otp.json; echo "::error::OTP verification failed"; exit 1; }
+          # Two ways in, because registration mail is rate-limited once a few
+          # test accounts have been created in quick succession: a fresh
+          # account's OTP, or a password reset on an account that already
+          # exists. Either yields the access token; nothing downstream cares
+          # which.
+          if [ -n "${{ inputs.reset_token }}" ]; then
+            RT='${{ inputs.reset_token }}'
+            case "$RT" in
+              http*)
+                FINAL=$(curl -sSL -o /dev/null -w '%{url_effective}' "$RT")
+                RT=$(printf '%s' "$FINAL" | sed -n 's/.*[?&]token=\([^&]*\).*/\1/p')
+                test -n "$RT" || { echo "::error::no token= in the resolved URL"; exit 1; }
+                ;;
+            esac
+            PW="$(openssl rand -base64 24)"
+            code=$(curl -sS -o /tmp/rp.json -w '%{http_code}' \
+              -X POST "$API/apps/$APP_ID/auth/reset-password" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg t "$RT" --arg p "$PW" '{reset_token:$t,new_password:$p}')")
+            test "$code" -lt 400 || { cat /tmp/rp.json; echo "::error::reset failed"; exit 1; }
+            code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' \
+              -X POST "$API/apps/$APP_ID/auth/login" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg e "${{ inputs.email }}" --arg p "$PW" '{email:$e,password:$p}')")
+            test "$code" -lt 400 || { cat /tmp/otp.json; echo "::error::login failed"; exit 1; }
+          else
+            test -n "${{ inputs.otp }}" || { echo "::error::pass either otp or reset_token for phase=multitenant"; exit 1; }
+            code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' \
+              -X POST "$API/apps/$APP_ID/auth/verify-otp" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg e "${{ inputs.email }}" --arg c "${{ inputs.otp }}" '{email:$e,otp_code:$c}')")
+            test "$code" -lt 400 || { cat /tmp/otp.json; echo "::error::OTP verification failed"; exit 1; }
+          fi
           TOKEN=$(jq -r '.access_token' /tmp/otp.json)
+          test -n "$TOKEN" -a "$TOKEN" != "null" || { echo "::error::no access_token"; exit 1; }
 
           onboard () {  # $1 = business name -> echoes the new business id
             curl -sS -X POST "$API/apps/$APP_ID/functions/complete-onboarding" \
