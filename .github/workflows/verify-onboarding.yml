@@ -1,0 +1,109 @@
+name: Verify onboarding end-to-end
+
+# Exercises the REAL onboarding write path against the live Base44 app:
+# register -> verify OTP -> POST complete-onboarding -> read back /auth/me.
+#
+# Why a workflow and not a local script: outbound HTTPS from the dev/AI
+# sandboxes is proxied to an allowlist that excludes base44.app (confirmed by
+# direct curl, by Playwright, and from inside the Base44 app sandbox — all
+# rejected). A GitHub runner is the only environment in this project's reach
+# that can actually talk to the app, so the check runs here and its result is
+# read back through the Actions API. Same rationale as smoke.yml.
+#
+# Two-phase by necessity: registration emails a one-time code, so the run is
+# split around fetching it. Phase 1 registers, phase 2 takes the code and
+# drives the rest.
+#
+# This is the regression test for the "empty-bodied HTTP 500 on Crear negocio"
+# incident — see base44/entities/User.jsonc's header comment for the root
+# cause. If onboarding ever breaks the same way again, phase 2 fails loudly
+# with the real status and body instead of a masked generic message.
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "register = create the account and send the OTP; onboard = verify the OTP and run onboarding"
+        required: true
+        type: choice
+        options: [register, onboard]
+      email:
+        description: "Test account address (use a +alias so it lands in a real inbox)"
+        required: true
+      otp:
+        description: "One-time code from the registration email (phase=onboard only)"
+        required: false
+      business_name:
+        description: "Business name to create (phase=onboard only)"
+        required: false
+        default: "E2E Verification"
+
+env:
+  APP_ID: 6a7b5d0edb6b035ccae558f3
+  API: https://base44.app/api
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register (phase 1)
+        if: inputs.phase == 'register'
+        run: |
+          set -euo pipefail
+          # Throwaway credential: never printed, never reused — verify-otp
+          # returns the access token, so nothing downstream needs it.
+          PW="$(openssl rand -base64 24)"
+          code=$(curl -sS -o /tmp/reg.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/register" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg e "${{ inputs.email }}" --arg p "$PW" '{email:$e,password:$p}')")
+          echo "register -> HTTP $code"
+          echo "body: $(cat /tmp/reg.json)"
+          test "$code" -lt 400 || { echo "::error::registration failed"; exit 1; }
+          echo "::notice::OTP sent to ${{ inputs.email }} — re-run with phase=onboard and the code."
+
+      - name: Verify OTP, run onboarding, read back the user (phase 2)
+        if: inputs.phase == 'onboard'
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.otp }}" || { echo "::error::otp input is required for phase=onboard"; exit 1; }
+
+          echo "--- verify-otp ---"
+          code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/verify-otp" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg e "${{ inputs.email }}" --arg c "${{ inputs.otp }}" '{email:$e,otp_code:$c}')")
+          echo "verify-otp -> HTTP $code"
+          test "$code" -lt 400 || { echo "body: $(cat /tmp/otp.json)"; echo "::error::OTP verification failed"; exit 1; }
+          TOKEN=$(jq -r '.access_token' /tmp/otp.json)
+          test "$TOKEN" != "null" -a -n "$TOKEN" || { echo "::error::no access_token returned"; exit 1; }
+          echo "got an access token (len ${#TOKEN})"
+
+          echo "--- state BEFORE onboarding ---"
+          curl -sS "$API/apps/$APP_ID/auth/me" -H "Authorization: Bearer $TOKEN" \
+            | jq -c '{role, business_id}'
+
+          echo "--- complete-onboarding ---"
+          # This is the exact call that returned 500 with an empty body.
+          code=$(curl -sS -o /tmp/onb.json -w '%{http_code}' --max-time 120 \
+            -X POST "$API/apps/$APP_ID/functions/complete-onboarding" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg n "${{ inputs.business_name }}" '{mode:"create",businessName:$n}')")
+          echo "complete-onboarding -> HTTP $code"
+          echo "body: $(cat /tmp/onb.json)"
+          if [ "$code" -ge 400 ]; then
+            if [ ! -s /tmp/onb.json ]; then
+              echo "::error::EMPTY BODY — the function never returned. This is the original failure signature."
+            fi
+            exit 1
+          fi
+
+          echo "--- state AFTER onboarding (the actual assertion) ---"
+          curl -sS "$API/apps/$APP_ID/auth/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me.json
+          jq -c '{role, business_id}' /tmp/me.json
+          BID=$(jq -r '.business_id // empty' /tmp/me.json)
+          ROLE=$(jq -r '.role // empty' /tmp/me.json)
+          test -n "$BID" || { echo "::error::business_id is still unset — User.update did not take effect"; exit 1; }
+          test "$ROLE" = "business_admin" || { echo "::error::expected role business_admin, got '$ROLE'"; exit 1; }
+          echo "::notice::PASS — onboarding wrote business_id=$BID role=$ROLE"
