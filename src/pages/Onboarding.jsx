@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, KeyRound, Loader2 } from "lucide-react";
+import { Building2, KeyRound, LifeBuoy, Loader2 } from "lucide-react";
 
 // The one screen between "logged in" and "has a tenant" (Module 2): every
 // CtrlHQ user either creates a Business (becomes business_admin) or joins
@@ -64,10 +64,22 @@ export default function Onboarding() {
         throw err;
       }
     } catch (err) {
-      setError(err.message || "No se pudo completar el registro.");
+      // Module 10: no dead ends — a human-readable message, not the raw
+      // axios/HTTP text, and always a way out via support (see the mailto
+      // link below). The technical detail (errorDetail) stays visible too,
+      // since it's what lets support actually diagnose this.
+      setError("No pudimos completar tu registro. Intenta de nuevo en unos minutos — si el problema sigue, contacta a soporte con el detalle de abajo.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const supportMailto = () => {
+    const subject = encodeURIComponent("CtrlHQ: no puedo completar el registro de mi negocio");
+    const body = encodeURIComponent(
+      `Hola,\n\nNo pude crear/unirme a un negocio en CtrlHQ.\n\nCorreo: ${user?.email || ""}\nDetalle técnico: ${errorDetail || "(sin detalle)"}\n`
+    );
+    return `mailto:soporte@acaciaco.com.mx?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -82,11 +94,18 @@ export default function Onboarding() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm space-y-1">
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm space-y-2">
             <p>{error}</p>
             {errorDetail && (
               <p className="font-mono text-xs opacity-80 break-all">{errorDetail}</p>
             )}
+            <a
+              href={supportMailto()}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            >
+              <LifeBuoy className="w-3.5 h-3.5" aria-hidden="true" />
+              Contactar soporte
+            </a>
           </div>
         )}
 
