@@ -37,6 +37,10 @@ on:
         description: "Business name to create (phase=onboard only)"
         required: false
         default: "E2E Verification"
+      cleanup:
+        description: "Delete the business this run creates once the assertion passes (phase=onboard only)"
+        required: false
+        default: "true"
 
 env:
   APP_ID: 6a7b5d0edb6b035ccae558f3
@@ -113,3 +117,25 @@ jobs:
           test -n "$BID" || { echo "::error::business_id is still unset — the browser would stay stuck on /onboarding"; exit 1; }
           test "$ROLE" = "business_admin" || { echo "::error::expected role business_admin, got '$ROLE'"; exit 1; }
           echo "::notice::PASS — onboarding wrote business_id=$BID role=$ROLE"
+
+          if [ "${{ inputs.cleanup }}" != "false" ]; then
+            echo "--- cleanup: delete the business this run created ---"
+            # Runs against the real danger-zone function (Module 7), so the
+            # check leaves no Business rows behind in production and exercises
+            # delete-account on the way out. It also clears this user's
+            # business_id/role, which is asserted below.
+            code=$(curl -sS -o /tmp/del.json -w '%{http_code}' --max-time 120 \
+              -X POST "$API/apps/$APP_ID/functions/delete-account" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg b "$BID" --arg n "${{ inputs.business_name }}" '{businessId:$b,confirmName:$n}')")
+            echo "delete-account -> HTTP $code"; echo "body: $(cat /tmp/del.json)"
+            if [ "$code" -ge 400 ]; then
+              echo "::warning::cleanup failed — business $BID is still there and needs removing by hand"
+            else
+              curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me2.json
+              echo "user after cleanup: $(jq -c '{role, business_id}' /tmp/me2.json)"
+              test -z "$(jq -r '.business_id // empty' /tmp/me2.json)" \
+                || echo "::warning::business_id survived delete-account"
+            fi
+          fi

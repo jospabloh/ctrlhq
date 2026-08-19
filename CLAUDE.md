@@ -118,34 +118,80 @@ CLI directly for anything auth-gated).
      platform-infrastructure finding immediately below, confirmed after
      these landed.
 
-- **Root cause, definitively confirmed: this is a Base44 platform
-  infrastructure failure, not a ctrlhq code issue.** After the two fixes
-  above shipped and onboarding still failed, a clean control test settled
-  it: `curl -X POST https://base44.app/api/apps/6a7b5d0edb6b035ccae558f3/functions/health`
-  with **no auth header at all** — should 401 on a healthy app, since
-  `health`'s own bearer check runs before anything else — instead returned
-  `HTTP 404 {"error":"not-found","detail":"user worker not found"}`. That's
-  Base44's own platform error string: the request never reached this app's
-  code (the 401 bearer check, or any handler logic, never ran) because
-  Base44's serverless runtime couldn't provision/find the worker process to
-  execute *any* function in this app — reproduced identically on `health`,
-  the simplest function in the repo, ruling out anything specific to
-  `complete-onboarding`. A later retry through the actual UI (post-PR #11,
-  with the new human-readable-error UI live) surfaced a second symptom of
-  the same underlying failure: `POST .../functions/complete-onboarding ->
-  500 | body: no-body` — no response body at all, which is what the
-  SDK interceptor sees when the platform fails before the function's own
-  `Response.json(...)` ever runs, consistent with the same worker-provisioning
-  problem manifesting as a different raw status this time. **No code change
-  in this repo can fix this** — the error-key and SDK-pin fixes above were
-  real, worth keeping, and are why the UI now shows a real status/body
-  instead of a masked generic message, but they were never capable of
-  fixing the actual failure. This needs Base44 platform support to restart
-  or fix worker provisioning for app `6a7b5d0edb6b035ccae558f3`; the
-  `health` curl reproduction above is the exact repro to hand them. Until
-  it's fixed, expect *every* function in this app — including
-  `acaciaControl` (see below) — to fail the same way, since they all run
-  through the same per-app worker.
+- **Root cause, FOUND AND FIXED: an entity-level `rls` block on the
+  built-in `User` entity.** Not a Base44 platform outage — an earlier pass
+  in this repo concluded that, on the strength of an unauthenticated `curl`
+  to `health` returning `HTTP 404 {"error":"not-found","detail":"user worker
+  not found"}`. That reading was wrong, and the lesson is worth keeping:
+  a platform-shaped error string is not proof the platform is the cause.
+  The worker recovered on its own (the same curl now returns the expected
+  `401 {"message":"unauthorized"}` from `health`'s own bearer check) and
+  onboarding still failed — so the 404 was a transient that masked the real,
+  code-side bug for a whole debugging session.
+
+  The evidence that actually localized it:
+  1. `Business.create` inside `complete-onboarding` succeeded **every**
+     time — the failed attempts left orphaned Business rows with
+     `created_by_id: service_*` and nobody attached. The `User.update` on
+     the very next line never completed.
+  2. The **empty response body** is the tell. A thrown error would have
+     been caught by the function's own `try/catch` and returned as
+     `{message}`. No body at all means the request never returned — it hung
+     and the runtime killed it. Chase an empty-bodied 500 as a hang, not as
+     an exception.
+  3. The app has exactly **one** `User` record (`is_service: false`), so
+     the service principal has no `User` row of its own.
+
+  `User` carried a full entity-level `rls` block whose `read`/`update` rules
+  included a `{{user.data.business_id}}` branch. That template cannot
+  resolve for a principal with no `User` row. `Business.create` kept working
+  because Business's *create* rule is
+  `$or[{role:admin},{created_by_id:{{user.id}}}]` — no `{{user.data.*}}`
+  anywhere, and `{{user.id}}` comes from the token rather than from an
+  entity read. Note the service role does **not** bypass RLS; it is
+  evaluated as an admin principal, which is why RLS shape matters at all
+  for `asServiceRole` calls.
+
+  The built-in `User` is not a normal entity — Base44 manages it through the
+  app's authentication system, and its own tooling refuses to write it
+  ("Users are managed through the app's authentication system"). stockflow,
+  whose `business:createBusinessSafe` does the identical
+  `asServiceRole.entities.User.update(user.id, {business_id, role})` and
+  works, carries **field-level RLS only** on `User`, with no entity-level
+  block. `base44/entities/User.jsonc` now matches it, and
+  `scripts/validate-rls.mjs` fails the build if the block reappears or if
+  either field-level write lock on `role`/`business_id` goes missing (those
+  locks are the security-relevant half — they stop `auth.updateMe`
+  privilege escalation — and are unchanged).
+
+  **This was a schema fix, so no function redeploy was needed.** The
+  function code never changed.
+
+  **Verified end-to-end**, three consecutive fresh accounts, via
+  `.github/workflows/verify-onboarding.yml` (register -> verify OTP ->
+  `complete-onboarding` -> read back the user):
+
+  ```
+  --- state BEFORE onboarding ---  {"role":"user","business_id":null}
+  complete-onboarding -> HTTP 200
+  --- state AFTER onboarding ---   {"role":"business_admin","business_id":"6a862b86220ba8c5e96d056a", ...}
+  PASS — onboarding wrote business_id=6a862b86220ba8c5e96d056a role=business_admin
+  ```
+
+  The "after" read hits `/entities/User/me` — the exact endpoint
+  `auth.me()` calls (`@base44/sdk/dist/modules/auth.js`), which is what
+  `AuthContext.checkUserAuth()` reads and what `App.jsx` gates `/onboarding`
+  on — so this proves the browser leaves the onboarding screen, not merely
+  that a database row changed. (An earlier revision of that workflow
+  asserted against `/auth/me`, which does not exist and answers
+  `{"error_type":"HTTPException","message":"App not found"}`; `jq` turned
+  that error object into `null` fields and produced a convincing false
+  failure. Assert against the endpoint the client actually calls.)
+
+  The prior `{error}`→`{message}` and SDK-pin fixes were real improvements
+  worth keeping — they are why the UI now surfaces a real status and body
+  instead of a masked generic message, which is what made this diagnosable
+  — but neither was the fix.
 
 - **`acaciaControl`**: the generic, HMAC-gated bridge every portfolio app
   implements identically (copied verbatim from stockflow's, per its own
@@ -165,11 +211,10 @@ CLI directly for anything auth-gated).
   the bridge actually authenticates end-to-end is the "Sincronizar ahora"
   button on this app's page in Mission Control (`AppDetail.jsx`), which hits
   `api/control/run-sync` on demand rather than waiting for tomorrow's cron.
-  **Expect this to fail too until Base44 fixes the worker-provisioning issue
-  documented above** — `acaciaControl` is a function in this same app, run
-  through the same per-app worker as `health`/`complete-onboarding`; don't
-  re-diagnose a round-trip failure here as a new bug before checking whether
-  the platform issue is still open.
+  Backend functions in this app are confirmed healthy as of 2026-08-19
+  (`complete-onboarding` returns 200 end-to-end, `health` returns its own
+  401), so a round-trip failure here is a real bug to chase, not the
+  platform outage an earlier revision of this file blamed.
 - The standalone `health` function above is *not* what Mission Control
   actually polls for Module 5 — `api/cron/sync.js`'s `probeAppHealth` calls
   `acaciaControl`'s `ping` action instead. It's kept as a convenience for a
@@ -356,21 +401,21 @@ app; `INGEST_HMAC_SECRET` is set to match Mission Control's value; both
 Mission Control migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. **Blocking everything below**: get Base44 platform support to fix worker
-   provisioning for app `6a7b5d0edb6b035ccae558f3` — see "Root cause,
-   definitively confirmed" under Backend functions above. Hand them the
-   `health` curl repro (unauthenticated request returning
-   `{"error":"not-found","detail":"user worker not found"}` instead of the
-   expected 401). Nothing that depends on a backend function running
-   (onboarding, `acaciaControl`, the standalone `health` endpoint) can be
-   verified until this is fixed — re-testing them before then just
-   reproduces the same platform failure, not a new bug.
-2. Once #1 is fixed: retry onboarding end-to-end for real (`Business.create`
-   + `User.update` both succeeding) for the platform owner's own stuck
-   account, then clean up the orphaned "Roseta Cafeteria"
-   (`6a860fa4c538d19adbc17195`) / "Owner Sandbox" Business rows left behind
-   by the failed attempts — they have `invite_code`s but nobody attached.
-3. Once #1 is fixed: confirm the `acaciaControl` bridge actually round-trips
+1. The platform owner's own account (`h.josepablo@gmail.com`) is still
+   `role: admin` with no `business_id` — it was left that way by the failed
+   attempts, not by the bug, which is now fixed and verified. Onboarding
+   works, so creating a business from `/onboarding` in the browser will
+   complete normally and move that account to `business_admin`.
+2. Stray `Business` rows to delete from Cuenta's danger zone (the platform
+   admin may delete any business; `delete-account` allows it): the orphans
+   from the failed attempts — "Roseta Cafeteria"
+   (`6a860fa4c538d19adbc17195`) and two "Owner Sandbox" rows
+   (`6a8622701fd0abf41ff517c6`, `6a8625b144e9a1cad5777cba`) — plus
+   "E2E Verification" 1 and 2 and their `h.josepablo+ctrlhq-e2e-*` test
+   users, left by the first verification runs before that workflow learned
+   to clean up after itself. Entity deletes are not reachable through the
+   Base44 MCP tooling, so these need the app's own danger zone.
+3. Confirm the `acaciaControl` bridge actually round-trips
    (not just "deployed") — click "Sincronizar ahora" on this app's page in
    Mission Control, or wait for the next 08:00 UTC `api/cron/sync.js` run,
    then check `public.app_health` for a `ctrlhq` row with `status: ok`.
