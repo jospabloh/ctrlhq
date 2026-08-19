@@ -1,4 +1,4 @@
-import { createClientFromRequest } from "npm:@base44/sdk";
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
 const TENANT_ENTITIES = [
   "Income", "Expense", "Payroll", "TeamConsumption",
@@ -19,23 +19,23 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const caller = await base44.auth.me();
-    if (!caller) return Response.json({ error: "Unauthorized" }, { status: 401 });
+    if (!caller) return Response.json({ message: "Unauthorized" }, { status: 401 });
 
     const { businessId, confirmName } = await req.json();
     if (!businessId) {
-      return Response.json({ error: "businessId es obligatorio." }, { status: 400 });
+      return Response.json({ message: "businessId es obligatorio." }, { status: 400 });
     }
 
     const isPlatformAdmin = caller.role === "admin";
     if (!isPlatformAdmin && (caller.role !== "business_admin" || caller.business_id !== businessId)) {
-      return Response.json({ error: "No autorizado." }, { status: 403 });
+      return Response.json({ message: "No autorizado." }, { status: 403 });
     }
 
     const business = await base44.asServiceRole.entities.Business.get(businessId);
-    if (!business) return Response.json({ error: "Negocio no encontrado." }, { status: 404 });
+    if (!business) return Response.json({ message: "Negocio no encontrado." }, { status: 404 });
     if ((confirmName || "").trim() !== business.name) {
       return Response.json(
-        { error: "El nombre no coincide. Escribe el nombre exacto del negocio para confirmar." },
+        { message: "El nombre no coincide. Escribe el nombre exacto del negocio para confirmar." },
         { status: 400 }
       );
     }
@@ -55,6 +55,6 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, deletedCounts, releasedMembers: members.length });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ message: error.message }, { status: 500 });
   }
 });
