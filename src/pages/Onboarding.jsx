@@ -18,18 +18,51 @@ export default function Onboarding() {
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [errorDetail, setErrorDetail] = useState("");
+
+  // TEMPORARY diagnostic wrapper (systematic-debugging: gather evidence before
+  // another blind fix attempt) — labels which of the three awaited calls
+  // actually failed and surfaces the real HTTP status/URL/response body,
+  // since the generic "Request failed with status code NNN" toast alone
+  // wasn't enough to root-cause the live 404. Remove once root-caused.
+  const describeError = (err) => {
+    const url = err?.originalError?.config?.url || err?.config?.url || "unknown-url";
+    const method = (err?.originalError?.config?.method || err?.config?.method || "?").toUpperCase();
+    const status = err?.status ?? err?.originalError?.response?.status ?? "no-status";
+    const data = err?.data ? JSON.stringify(err.data) : (err?.originalError?.response?.data ? JSON.stringify(err.originalError.response.data) : "no-body");
+    return `${method} ${url} -> ${status} | body: ${data}`;
+  };
 
   const finishOnboarding = async (mode) => {
     setError("");
+    setErrorDetail("");
     setLoading(true);
     try {
-      await base44.functions.invoke("complete-onboarding", {
-        mode,
-        businessName: mode === "create" ? businessName : undefined,
-        inviteCode: mode === "join" ? inviteCode : undefined,
-      });
-      await checkUserAuth();
-      await refreshBusiness();
+      try {
+        await base44.functions.invoke("complete-onboarding", {
+          mode,
+          businessName: mode === "create" ? businessName : undefined,
+          inviteCode: mode === "join" ? inviteCode : undefined,
+        });
+      } catch (err) {
+        console.error("[Onboarding] complete-onboarding invoke failed", err);
+        setErrorDetail(`[complete-onboarding] ${describeError(err)}`);
+        throw err;
+      }
+      try {
+        await checkUserAuth();
+      } catch (err) {
+        console.error("[Onboarding] checkUserAuth failed", err);
+        setErrorDetail(`[checkUserAuth] ${describeError(err)}`);
+        throw err;
+      }
+      try {
+        await refreshBusiness();
+      } catch (err) {
+        console.error("[Onboarding] refreshBusiness failed", err);
+        setErrorDetail(`[refreshBusiness] ${describeError(err)}`);
+        throw err;
+      }
     } catch (err) {
       setError(err.message || "No se pudo completar el registro.");
     } finally {
@@ -49,7 +82,12 @@ export default function Onboarding() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm space-y-1">
+            <p>{error}</p>
+            {errorDetail && (
+              <p className="font-mono text-xs opacity-80 break-all">{errorDetail}</p>
+            )}
+          </div>
         )}
 
         <Tabs defaultValue="create" className="w-full">
