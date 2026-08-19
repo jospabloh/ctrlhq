@@ -91,13 +91,17 @@ CLI directly for anything auth-gated).
   ticket sync, usage/session sync. Without this deployed, none of Modules
   1/5/8's Mission-Control-side integration actually runs, even though the app
   is registered in Mission Control's config files — registration alone wires
-  the config, not the data path. **Added to this repo but NOT yet deployed**
-  — needs `base44 functions deploy --app-id 6a7b5d0edb6b035ccae558f3` from the
-  platform owner's terminal (same auth constraint as the other functions),
-  *and* `INGEST_HMAC_SECRET` set on this Base44 app via `base44 secrets set`
-  (shared secret with Mission Control — get the value from Mission Control's
-  own env, never re-generate it here) before Mission Control's calls will
-  authenticate.
+  the config, not the data path. **Deployed 2026-08-19** (`base44 functions
+  deploy --app-id 6a7b5d0edb6b035ccae558f3 --force`, run by the platform
+  owner from a real terminal — `entities push` and `site deploy` run in the
+  same session, all three confirmed successful) and `INGEST_HMAC_SECRET` is
+  set on this Base44 app, matching Mission Control's value. **Not yet
+  independently confirmed round-tripping**: `public.app_health` has no row
+  for `ctrlhq` yet (the daily `api/cron/sync.js` run at 08:00 UTC hadn't
+  fired again since the deploy as of this check) — the fastest way to prove
+  the bridge actually authenticates end-to-end is the "Sincronizar ahora"
+  button on this app's page in Mission Control (`AppDetail.jsx`), which hits
+  `api/control/run-sync` on demand rather than waiting for tomorrow's cron.
 - The standalone `health` function above is *not* what Mission Control
   actually polls for Module 5 — `api/cron/sync.js`'s `probeAppHealth` calls
   `acaciaControl`'s `ping` action instead. `health` is harmless to keep (a
@@ -124,8 +128,7 @@ CLI directly for anything auth-gated).
   field-locked so only staff replies can claim the `acacia_staff` role).
   Writes to this app first. Mission Control's `ticketControl.js` now has a
   `ctrlhq` entry (Module 8 sync wired) — the actual pull happens over the
-  `acaciaControl` bridge above, so it's live only once that function is
-  deployed.
+  `acaciaControl` bridge above, which is now deployed (see Backend functions).
 - **acaciaco-site**: `jospabloh/acaciaco-site` `apps/ctrlhq.html` + the
   `index.html` apps grid.
 - **Login/Register/ForgotPassword/ResetPassword**: `src/pages/Login.jsx` +
@@ -184,10 +187,10 @@ session — see module sections above for detail and evidence):
 - [x] Module 6 — Changelog: `appConfig.js` + `scripts/release.mjs`
       (`npm run release`).
 - [x] Module 7 — Account & danger zone: `Cuenta.jsx`.
-- [x] Module 8 — Support: `Soporte.jsx` + entities + `acaciaControl` bridge +
-      Mission Control's `ticketControl.js` `ctrlhq` entry — sync is wired
-      end-to-end pending the bridge function's deploy (see Backend functions
-      above).
+- [x] Module 8 — Support: `Soporte.jsx` + entities + `acaciaControl` bridge
+      (deployed) + Mission Control's `ticketControl.js` `ctrlhq` entry — sync
+      is wired end-to-end; not yet independently observed round-tripping a
+      real ticket (see Backend functions above for how to confirm it).
 - [x] Module 9 — acaciaco-site: `apps/ctrlhq.html` + apps grid entry.
 - [x] Module 10 — Login: real states, links to trial/support, dark-theme
       correct (existing `.dark` token setup, unchanged), full Spanish
@@ -195,18 +198,16 @@ session — see module sections above for detail and evidence):
 
 **Live since 2026-08-19**: production site at `https://ctrlhq.acaciaco.com.mx`
 (Base44-assigned domain `https://smart-angelic-flow-ledger.base44.app` still
-resolves too). All 4 backend functions and all 12 entity schemas (with RLS)
-are deployed and confirmed against the live Base44 app; both Mission Control
-migrations are applied to production.
+resolves too). All 5 backend functions (including `acaciaControl`) and all 13
+entity schemas (with RLS) are deployed and confirmed against the live Base44
+app; `INGEST_HMAC_SECRET` is set to match Mission Control's value; both
+Mission Control migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. **The one real blocker left**: deploy the `acaciaControl` function (`base44
-   functions deploy --app-id 6a7b5d0edb6b035ccae558f3`) and set
-   `INGEST_HMAC_SECRET` on this app (`base44 secrets set`, matching Mission
-   Control's value) — until both are done, Modules 1/5/8's Mission-Control-side
-   sync stays wired but dark. This needs a human running the Base44 CLI from a
-   real terminal (device-code login the sandbox's `run_command` tool can't
-   complete) — not something this session can finish unattended.
+1. Confirm the `acaciaControl` bridge actually round-trips (not just
+   "deployed") — click "Sincronizar ahora" on this app's page in Mission
+   Control, or wait for the next 08:00 UTC `api/cron/sync.js` run, then check
+   `public.app_health` for a `ctrlhq` row with `status: ok`.
 2. `apps/ctrlhq.html`'s WhatsApp number (`524498958291`) matches every other
    portfolio app's marketing page — it's real, not a placeholder. Its
    "Cotización" pricing (vs. other apps' flat MXN/mes prices) also isn't a bug:
