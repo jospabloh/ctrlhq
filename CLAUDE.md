@@ -139,6 +139,39 @@ CLI directly for anything auth-gated).
   `suspended`/`view_only` are explained via a banner in
   `src/components/Layout.jsx` (post-login, since billing_status lives on the
   Business the user hasn't loaded yet at the login screen itself).
+  **These pages were translated but never actually reachable** — a real bug,
+  found the hard way when the platform owner reported the deployed site let
+  them straight into the dashboard with no login prompt and no tenant. Root
+  cause, found by re-diffing against stockflow's real auth architecture
+  (not just its Login.jsx copy) rather than assuming a translated page was a
+  working page:
+  1. `App.jsx` never routed `/login`/`/register`/`/forgot-password`/
+     `/reset-password` at all — they were dead files. The only "log in" path
+     was `AuthContext`'s `authError.type === 'auth_required'` branch calling
+     `base44.auth.redirectToLogin()`, i.e. Base44's generic hosted login, not
+     this app's own Spanish page.
+  2. `src/components/ProtectedRoute.jsx` existed as unused Base44-scaffold
+     boilerplate — never imported by `App.jsx`. So the authenticated route
+     tree rendered unconditionally regardless of `isAuthenticated`: a visitor
+     with no valid session (or a browser that simply already carried a valid
+     Base44 platform session, e.g. the app's own builder) saw the full app
+     shell with no explicit login step.
+  3. The onboarding gate special-cased `role !== 'admin'`, so the one User
+     row with `role: admin` (the platform owner, auto-registered as the
+     app's Base44 builder) skipped `/onboarding` entirely and had no
+     business_id — "no tenant" was the correct behavior for a bare Base44
+     `admin`, not a bug in isolation, but combined with #1/#2 it meant this
+     account saw the tenant UI shell with zero tenant context.
+  **Fixed**: rewired `ProtectedRoute.jsx` to redirect an unauthenticated
+  visitor to `/login` (mirrors stockflow's `ProtectedRoute.jsx` exactly);
+  `App.jsx` now routes the four auth pages as public routes and wraps the
+  tenant routes in `<ProtectedRoute>`; the onboarding gate now applies to
+  every role, including `admin` — `role: admin` exists to satisfy each
+  entity's RLS service-role branch (exercised server-side by Mission
+  Control), not to let a human skip creating/joining a business in the
+  browser. Also matched stockflow's `checkUserAuth`: only a 401 means the
+  session itself is invalid — a 403 is a permission error on an otherwise
+  valid session and must not bounce a legitimate user to `/login`.
 
 ## Build / verify
 
@@ -194,7 +227,11 @@ session — see module sections above for detail and evidence):
 - [x] Module 9 — acaciaco-site: `apps/ctrlhq.html` + apps grid entry.
 - [x] Module 10 — Login: real states, links to trial/support, dark-theme
       correct (existing `.dark` token setup, unchanged), full Spanish
-      translation across Login/Register/ForgotPassword/ResetPassword.
+      translation across Login/Register/ForgotPassword/ResetPassword — and,
+      after an earlier pass wired the translation but not the routing, now
+      actually reachable: `ProtectedRoute` gates the tenant app on
+      `isAuthenticated` and the onboarding gate applies to every role (see
+      Modules 6–10 above for the full root-cause writeup).
 
 **Live since 2026-08-19**: production site at `https://ctrlhq.acaciaco.com.mx`
 (Base44-assigned domain `https://smart-angelic-flow-ledger.base44.app` still

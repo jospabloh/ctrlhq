@@ -110,8 +110,11 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(false);
       setAuthChecked(true);
 
-      // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
+      // Only 401 means the session/token itself is invalid or expired — a 403
+      // is a permission/business-logic error (e.g. RLS rejecting the call for
+      // an otherwise-valid, signed-in user) and must not be treated as "not
+      // logged in", or a legitimate session would get bounced to /login.
+      if (error.status === 401) {
         setAuthError({
           type: 'auth_required',
           message: 'Authentication required'
