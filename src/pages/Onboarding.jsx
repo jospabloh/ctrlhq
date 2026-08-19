@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, KeyRound, Loader2, Wallet } from "lucide-react";
+import { Building2, KeyRound, Loader2 } from "lucide-react";
 
 // The one screen between "logged in" and "has a tenant" (Module 2): every
 // CtrlHQ user either creates a Business (becomes business_admin) or joins
@@ -41,9 +41,7 @@ export default function Onboarding() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-sm p-8">
         <div className="flex items-center gap-2 mb-6">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-            <Wallet className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <img src="/logo-192.png" alt="CtrlHQ" className="w-9 h-9" />
           <div>
             <p className="font-heading font-semibold text-sm">Bienvenido, {user?.full_name || user?.email}</p>
             <p className="text-xs text-muted-foreground">Un paso más para empezar</p>

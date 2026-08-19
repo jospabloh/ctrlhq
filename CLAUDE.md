@@ -63,11 +63,11 @@ MCP equivalent) — verify against the live schema, don't assume the diff shippe
 ## Backend functions (Modules 3, 5, 7)
 
 `base44/functions/` — `complete-onboarding`, `manage-member`, `delete-account`,
-`health`. Written and committed in this session; **deployment via
-`base44 functions deploy` could not be confirmed in this session** (the Base44
-MCP `run_command` tool timed out repeatedly). Before relying on any of these in
-production, run `base44 functions deploy` (or `base44 functions list` to check
-what's actually live) and confirm.
+`health`. **Deployed and confirmed live** (2026-08-19, `base44 functions
+deploy --app-id 6a7b5d0edb6b035ccae558f3`, run by the platform owner from a
+real terminal — the Base44 MCP `run_command` tool couldn't complete the
+device-code login this needs, it isn't a substitute for a human running the
+CLI directly for anything auth-gated).
 
 ## Modules 6–10
 
@@ -112,20 +112,20 @@ session — see module sections above for detail and evidence):
 - [x] Module 1 — License lifecycle: `Business.billing_status` (trial|active|
       view_only|suspended), field-locked to admin-only writes. No native
       lifecycle/renewal cron in this repo. Registered in Mission Control's
-      `apps` table (migration `0037_seed_ctrlhq_v2.sql`) and
-      `api/_lib/licenseControl.js`/`messaging.js`/`Licenses.jsx` — **not yet
-      applied to the live Supabase DB in this session; apply via the normal
-      migration pipeline before the lifecycle cron can operate on this app.**
+      `apps` table (migrations `0037_seed_ctrlhq_v2.sql` + `0038_ctrlhq_url.sql`,
+      applied to production 2026-08-19) and `api/_lib/licenseControl.js`/
+      `messaging.js`/`Licenses.jsx`.
 - [x] Module 2 — Roles: `src/lib/rbac.js`. Mission Control's operator roles
       are a separate layer, never conflated.
 - [x] Module 3 — Granular permissions: `permissionRegistry.js` + RLS/Safe
       functions server-side re-check, in the precedence documented above.
 - [x] Module 4 — RLS: four-op `$or` shape on every tenant entity, both path
-      halves verified, deployed live and confirmed via the Base44 MCP.
-      `validate:rls` wired into `npm run lint`, not yet into CI as a
-      standalone job (it runs as part of `npm run lint` in `ci.yml`).
-- [x] Module 5 — Health: `base44/functions/health` — **written, deployment
-      not confirmed** (see Backend functions above).
+      halves verified, deployed live and confirmed (via the Base44 MCP, then
+      re-confirmed by `base44 entities push` from the platform owner's
+      machine — 12/12 entities). `validate:rls` wired into `npm run lint`,
+      not yet into CI as a standalone job (it runs as part of `npm run lint`
+      in `ci.yml`).
+- [x] Module 5 — Health: `base44/functions/health` — deployed and live.
 - [x] Module 6 — Changelog: `appConfig.js`, no release script yet (see above).
 - [x] Module 7 — Account & danger zone: `Cuenta.jsx`.
 - [x] Module 8 — Support: `Soporte.jsx` + entities; Mission Control-side pull
@@ -134,12 +134,17 @@ session — see module sections above for detail and evidence):
 - [x] Module 10 — Login: real states, links to trial/support, dark-theme
       correct (existing `.dark` token setup, unchanged).
 
+**Live since 2026-08-19**: production site at `https://ctrlhq.acaciaco.com.mx`
+(Base44-assigned domain `https://smart-angelic-flow-ledger.base44.app` still
+resolves too). All 4 backend functions and all 12 entity schemas (with RLS)
+are deployed and confirmed against the live Base44 app; both Mission Control
+migrations are applied to production.
+
 **Open follow-ups, in priority order:**
-1. Confirm `base44 functions deploy` actually shipped the four functions —
-   the MCP tool timed out every time it was tried this session.
-2. Apply migration `0037_seed_ctrlhq_v2.sql` to the live Mission Control
-   Supabase project.
-3. Confirm/replace the placeholder WhatsApp number and pricing copy on
+1. Confirm/replace the placeholder WhatsApp number and pricing copy on
    `apps/ctrlhq.html` with real ones before treating it as final marketing copy.
-4. Fix the pre-existing `npm run typecheck` failures, then wire it into CI.
-5. Build `scripts/release.mjs` (Module 6) instead of hand-editing `appConfig.js`.
+2. Build Mission Control's pull-sync for `SupportTicket`/`SupportTicketMessage`
+   into the shared `tickets` bodega (Module 8) — the entities and config
+   (`apps.config.ticket_entity`) are ready, the sync job itself is not built.
+3. Fix the pre-existing `npm run typecheck` failures, then wire it into CI.
+4. Build `scripts/release.mjs` (Module 6) instead of hand-editing `appConfig.js`.

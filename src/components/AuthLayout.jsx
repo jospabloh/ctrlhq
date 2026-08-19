@@ -5,6 +5,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
+          <img src="/logo-192.png" alt="CtrlHQ" className="w-12 h-12 mx-auto mb-6" />
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-4">
             <Icon className="w-7 h-7 text-primary-foreground" aria-hidden="true" />
           </div>

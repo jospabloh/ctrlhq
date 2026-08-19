@@ -9,7 +9,6 @@ import {
   Settings,
   Menu,
   X,
-  Wallet,
   UserCircle,
   LifeBuoy,
   AlertTriangle,
@@ -57,8 +56,8 @@ export default function Layout() {
       {/* Mobile header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-background border-b border-border h-14 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <Wallet className="w-5 h-5 text-primary" />
-          <span className="font-heading font-semibold">Finanzas</span>
+          <img src="/logo-192.png" alt="CtrlHQ" className="w-6 h-6" />
+          <span className="font-heading font-semibold">CtrlHQ</span>
         </div>
         <button onClick={() => setSidebarOpen(!sidebarOpen)}>
           {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -73,12 +72,10 @@ export default function Layout() {
         )}
       >
         <div className="h-16 flex items-center gap-2 px-6 border-b border-sidebar-border">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-            <Wallet className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <img src="/logo-192.png" alt="CtrlHQ" className="w-9 h-9" />
           <div>
-            <p className="font-heading font-semibold text-sm text-sidebar-foreground">Gestión Financiera</p>
-            <p className="text-xs text-muted-foreground">Sistema Integrado</p>
+            <p className="font-heading font-semibold text-sm text-sidebar-foreground">CtrlHQ</p>
+            <p className="text-xs text-muted-foreground">Gestión Financiera</p>
           </div>
         </div>
         <nav className="p-3 space-y-1">
