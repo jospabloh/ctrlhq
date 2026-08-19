@@ -11,7 +11,8 @@
     "validate:rls": "node scripts/validate-rls.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "release": "node scripts/release.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:smoke": "playwright test"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.43",
@@ -82,6 +83,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
+    "@playwright/test": "^1.49.0",
     "@types/node": "^22.13.5",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",

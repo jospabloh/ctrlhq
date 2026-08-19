@@ -190,11 +190,18 @@ CLI directly for anything auth-gated).
 - **Accent color**: `--primary` was originally near-black/greyscale (matching
   every button/nav-active state in the app), which read as a missing brand
   color once the two-column login's gradient panel made the lack of any hue
-  obvious. Sampled the teal from the actual logo PNG (`public/logo-512.png`,
-  ~`hsl(175 70% 33%)`) and applied it to `--primary`/`--sidebar-primary` (and
-  their `.dark` counterparts) in `src/index.css` — one token change that
-  flows through every button, active nav item, focus ring, and the login
-  brand panel, rather than a one-off login-page tweak.
+  obvious. Sampled the teal from the actual logo PNG (`public/logo-512.png`)
+  and applied it to `--primary`/`--sidebar-primary` (and their `.dark`
+  counterparts) in `src/index.css` — one token change that flows through
+  every button, active nav item, focus ring, and the login brand panel,
+  rather than a one-off login-page tweak. **Landed at `hsl(175 70% 33%)`
+  first, then darkened to `175 70% 25%`**: a bot review (Codex, on the PR
+  that introduced it) flagged the lighter value at ~3.95:1 contrast against
+  white foreground text — below WCAG AA's 4.5:1 — verified independently
+  with a WCAG luminance calculation (matched the bot's number exactly) before
+  fixing, including the `hover:bg-primary/90` state the bot also flagged
+  (blends 10% toward white, dropping contrast further — `175 70% 25%` keeps
+  even that state at ~5.0:1).
 
 ## Build / verify
 
@@ -213,6 +220,23 @@ CLI directly for anything auth-gated).
   JSDoc prop typings to every vendored shadcn component, portfolio-wide, not
   a ctrlhq change — out of scope here. `.github/workflows/ci.yml` documents
   this with an inline comment.
+- `npm run test:smoke` — `tests/e2e/smoke.spec.js` (Playwright), checks the
+  **deployed production site**, not the local build: anonymous visitors land
+  on `/login` (never the tenant dashboard — the exact regression this app
+  shipped once, see the Login/Register/… entry above), the login page keeps
+  the portfolio's two-column skeleton, the brand color is a real hue (not
+  greyscale), and `/register`/`/forgot-password` are reachable. Deliberately
+  **not** run from `npm run build`/`lint`/CI's push-triggered job, and not
+  runnable from an AI coding sandbox — see `.github/workflows/smoke.yml`'s
+  header comment: those environments proxy outbound HTTPS to an allowlist
+  that excludes this app's domain, confirmed by three independent failed
+  attempts (direct curl, Playwright, and `curl` from inside the Base44 app
+  sandbox via MCP — all rejected by network policy) before building this.
+  Runs via `workflow_dispatch` (triggerable on demand right after a `base44
+  site deploy`, without waiting for the next tick) plus a daily cron
+  backstop. This is the answer to "you should be able to verify the live
+  site yourself" — the dev sandbox structurally can't reach it, so the check
+  runs somewhere that can, and its result is readable via the GitHub API.
 
 ## ACACIA Portfolio Standard
 
