@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/lib/AuthContext";
+import { usePermissions } from "@/lib/PermissionContext";
 
 const formatCurrency = (n) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
@@ -56,10 +58,15 @@ export default function Nomina() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const canView = can("Nomina:view");
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (canView) loadData();
+    else setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView]);
 
   const loadData = async () => {
     try {
@@ -109,7 +116,7 @@ export default function Nomina() {
     }
     setSaving(true);
     try {
-      const payload = { ...form, total: computeTotal(form) };
+      const payload = { ...form, total: computeTotal(form), business_id: user.business_id };
       if (editingId) {
         await base44.entities.Payroll.update(editingId, payload);
       } else {
@@ -138,6 +145,18 @@ export default function Nomina() {
 
   const totalNomina = records.reduce((s, r) => s + (r.total || r.base_salary || 0), 0);
   const totalOvertime = records.reduce((s, r) => s + (r.overtime_pay || 0), 0);
+
+  // Nómina is sensitive (Module 3): staff has no access at all, matching
+  // Payroll's RLS (base44/entities/Payroll.jsonc) which excludes them from
+  // even reading — this mirrors that server-side rule, not a substitute for it.
+  if (!canView) {
+    return (
+      <div className="bg-card rounded-xl border border-border p-8 text-center text-muted-foreground">
+        No tienes acceso a Nómina. Solicita a un administrador del negocio que
+        te otorgue este permiso.
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/AuthContext";
+import { usePermissions } from "@/lib/PermissionContext";
 
 export default function Configuracion() {
   return (
@@ -53,6 +54,9 @@ function CatalogManager({ entityName, label, extraFields = [] }) {
   const [loading, setLoading] = useState(true);
   const [newItem, setNewItem] = useState({ name: "", ...Object.fromEntries(extraFields.map((f) => [f, ""])) });
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const canManage = can("Configuracion:manage_catalogs");
 
   useEffect(() => {
     loadItems();
@@ -75,7 +79,7 @@ function CatalogManager({ entityName, label, extraFields = [] }) {
       return;
     }
     try {
-      await base44.entities[entityName].create(newItem);
+      await base44.entities[entityName].create({ ...newItem, business_id: user.business_id });
       toast({ title: `${label} agregado` });
       setNewItem({ name: "", ...Object.fromEntries(extraFields.map((f) => [f, ""])) });
       loadItems();
@@ -99,34 +103,38 @@ function CatalogManager({ entityName, label, extraFields = [] }) {
 
   return (
     <div className="space-y-4">
-      {/* Add form */}
-      <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-3 items-end">
-          <div className="flex-1 w-full">
-            <Label className="mb-1.5">Nuevo {label}</Label>
-            <Input
-              value={newItem.name}
-              onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-              placeholder={`Nombre del ${label.toLowerCase()}`}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            />
-          </div>
-          {extraFields.map((field) => (
-            <div key={field} className="flex-1 w-full">
-              <Label className="mb-1.5">{fieldLabels[field]}</Label>
+      {/* Add form — Module 3: catalog management is business_admin-only
+          (permissionRegistry "Configuracion:manage_catalogs"); staff still
+          reads these lists for the dropdowns elsewhere in the app. */}
+      {canManage && (
+        <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-3 items-end">
+            <div className="flex-1 w-full">
+              <Label className="mb-1.5">Nuevo {label}</Label>
               <Input
-                value={newItem[field]}
-                onChange={(e) => setNewItem({ ...newItem, [field]: e.target.value })}
-                placeholder={fieldLabels[field]}
+                value={newItem.name}
+                onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                placeholder={`Nombre del ${label.toLowerCase()}`}
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               />
             </div>
-          ))}
-          <Button onClick={handleAdd} className="shrink-0">
-            <Plus className="w-4 h-4 mr-2" /> Agregar
-          </Button>
+            {extraFields.map((field) => (
+              <div key={field} className="flex-1 w-full">
+                <Label className="mb-1.5">{fieldLabels[field]}</Label>
+                <Input
+                  value={newItem[field]}
+                  onChange={(e) => setNewItem({ ...newItem, [field]: e.target.value })}
+                  placeholder={fieldLabels[field]}
+                  onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                />
+              </div>
+            ))}
+            <Button onClick={handleAdd} className="shrink-0">
+              <Plus className="w-4 h-4 mr-2" /> Agregar
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
@@ -160,9 +168,11 @@ function CatalogManager({ entityName, label, extraFields = [] }) {
                     <TableCell key={f} className="text-muted-foreground">{item[f] || "—"}</TableCell>
                   ))}
                   <TableCell>
-                    <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canManage && (
+                      <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

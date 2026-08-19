@@ -2,26 +2,44 @@
   "name": "Income",
   "type": "object",
   "properties": {
-    "date": {
-      "type": "string",
-      "format": "date"
-    },
-    "amount": {
-      "type": "number"
-    },
-    "payment_method": {
-      "type": "string"
-    },
-    "sale_type": {
-      "type": "string"
-    },
-    "description": {
-      "type": "string"
-    }
+    "business_id": { "type": "string", "description": "Tenant (Business.id) dueño de este registro" },
+    "date": { "type": "string", "format": "date" },
+    "amount": { "type": "number" },
+    "payment_method": { "type": "string" },
+    "sale_type": { "type": "string" },
+    "description": { "type": "string" }
   },
-  "required": [
-    "date",
-    "amount",
-    "payment_method"
-  ]
+  "required": ["business_id", "date", "amount", "payment_method"],
+  // RLS (Module 4): tenant branch (data.business_id) for business_admin AND
+  // staff (day-to-day entry, permissionRegistry "Ingresos:create"), delete
+  // restricted to business_admin, plus the explicit service-role admin branch
+  // on all four ops.
+  "rls": {
+    "create": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "staff" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.business_id": "{{user.data.business_id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "staff" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    }
+  }
 }

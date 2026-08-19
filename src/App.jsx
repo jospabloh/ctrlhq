@@ -4,6 +4,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { PermissionProvider } from '@/lib/PermissionContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 // Add page imports here
@@ -14,9 +15,12 @@ import Egresos from '@/pages/Egresos';
 import Nomina from '@/pages/Nomina';
 import ConsumosEquipo from '@/pages/ConsumosEquipo';
 import Configuracion from '@/pages/Configuracion';
+import Cuenta from '@/pages/Cuenta';
+import Soporte from '@/pages/Soporte';
+import Onboarding from '@/pages/Onboarding';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { user, isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
@@ -38,20 +42,31 @@ const AuthenticatedApp = () => {
     }
   }
 
+  // Module 2: every user needs a tenant (business_id) before touching any
+  // business_id-scoped entity — RLS would reject every read/write otherwise.
+  // The platform admin (role: admin) has no business_id and doesn't need one.
+  if (user && user.role !== 'admin' && !user.business_id) {
+    return <Onboarding />;
+  }
+
   // Render the main app
   return (
-    <Routes>
-      {/* Add your page Route elements here */}
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/ingresos" element={<Ingresos />} />
-        <Route path="/egresos" element={<Egresos />} />
-        <Route path="/nomina" element={<Nomina />} />
-        <Route path="/consumos-equipo" element={<ConsumosEquipo />} />
-        <Route path="/configuracion" element={<Configuracion />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <PermissionProvider>
+      <Routes>
+        {/* Add your page Route elements here */}
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/ingresos" element={<Ingresos />} />
+          <Route path="/egresos" element={<Egresos />} />
+          <Route path="/nomina" element={<Nomina />} />
+          <Route path="/consumos-equipo" element={<ConsumosEquipo />} />
+          <Route path="/configuracion" element={<Configuracion />} />
+          <Route path="/cuenta" element={<Cuenta />} />
+          <Route path="/soporte" element={<Soporte />} />
+        </Route>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </PermissionProvider>
   );
 };
 

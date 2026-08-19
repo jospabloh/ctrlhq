@@ -2,39 +2,49 @@
   "name": "Expense",
   "type": "object",
   "properties": {
-    "date": {
-      "type": "string",
-      "format": "date"
-    },
-    "supplier_name": {
-      "type": "string"
-    },
-    "amount": {
-      "type": "number"
-    },
+    "business_id": { "type": "string", "description": "Tenant (Business.id) dueño de este registro" },
+    "date": { "type": "string", "format": "date" },
+    "supplier_name": { "type": "string" },
+    "amount": { "type": "number" },
     "invoice_status": {
       "type": "string",
-      "enum": [
-        "pendiente",
-        "recibida",
-        "no_requerida"
-      ],
+      "enum": ["pendiente", "recibida", "no_requerida"],
       "default": "pendiente"
     },
-    "invoice_number": {
-      "type": "string"
-    },
-    "category": {
-      "type": "string"
-    },
-    "notes": {
-      "type": "string"
-    }
+    "invoice_number": { "type": "string" },
+    "category": { "type": "string" },
+    "notes": { "type": "string" }
   },
-  "required": [
-    "date",
-    "supplier_name",
-    "amount",
-    "invoice_status"
-  ]
+  "required": ["business_id", "date", "supplier_name", "amount", "invoice_status"],
+  // RLS (Module 4): same shape as Income — business_admin + staff can create/
+  // update within their own tenant, delete is business_admin-only, explicit
+  // service-role admin branch on all four ops.
+  "rls": {
+    "create": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "staff" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.business_id": "{{user.data.business_id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "staff" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    }
+  }
 }

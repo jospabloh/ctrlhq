@@ -7,6 +7,11 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  // The caller's tenant (Module 1: billing_status/plan live here, written
+  // only by Mission Control). null until the user has completed onboarding
+  // (see complete-onboarding function) or while it's loading.
+  const [business, setBusiness] = useState(null);
+  const [isLoadingBusiness, setIsLoadingBusiness] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
@@ -98,12 +103,13 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
       setAuthChecked(true);
+      await loadBusiness(currentUser);
     } catch (error) {
       console.error('User auth check failed:', error);
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
       setAuthChecked(true);
-      
+
       // If user auth fails, it might be an expired token
       if (error.status === 401 || error.status === 403) {
         setAuthError({
@@ -113,6 +119,28 @@ export const AuthProvider = ({ children }) => {
       }
     }
   };
+
+  // Loads the caller's own tenant (Business). A user who hasn't finished
+  // onboarding yet (see complete-onboarding function) has no business_id —
+  // that's expected, not an error; callers should route to /onboarding.
+  const loadBusiness = async (forUser) => {
+    if (!forUser?.business_id) {
+      setBusiness(null);
+      return;
+    }
+    setIsLoadingBusiness(true);
+    try {
+      const record = await base44.entities.Business.get(forUser.business_id);
+      setBusiness(record || null);
+    } catch (error) {
+      console.error('Failed to load business:', error);
+      setBusiness(null);
+    } finally {
+      setIsLoadingBusiness(false);
+    }
+  };
+
+  const refreshBusiness = () => loadBusiness(user);
 
   const logout = (shouldRedirect = true) => {
     setUser(null);
@@ -133,9 +161,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      business,
+      isLoadingBusiness,
+      refreshBusiness,
+      isAuthenticated,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,
