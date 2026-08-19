@@ -259,7 +259,7 @@ jobs:
             jq -r '.business.id // empty' /tmp/onb.json
           }
           memberships () {
-            curl -sS "$API/apps/$APP_ID/entities/Membership?q=$(jq -rn --arg u "$UID" '{user_id:$u}|@uri')" \
+            curl -sS "$API/apps/$APP_ID/entities/Membership?q=$(jq -rn --arg u "$USER_ID" '{user_id:$u}|@uri')" \
               -H "Authorization: Bearer $TOKEN"
           }
           me () { curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN"; }
@@ -270,8 +270,8 @@ jobs:
               -d "$(jq -nc --arg b "$1" '{businessId:$b}')"
           }
 
-          UID=$(curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" | jq -r '.id')
-          echo "acting as user $UID"
+          USER_ID=$(curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" | jq -r '.id')
+          echo "acting as user $USER_ID"
 
           echo "--- create two businesses ---"
           A=$(onboard "E2E Tenant A"); echo "A=$A"
