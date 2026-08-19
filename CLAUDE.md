@@ -184,12 +184,17 @@ CLI directly for anything auth-gated).
   a single centered card; stockflow's (and per its own comment, rumbo's) is a
   two-column desktop layout — form on the left, a gradient brand panel with a
   pill badge + headline + copy on the right, hidden on mobile. Rebuilt
-  `AuthLayout.jsx` to match that skeleton exactly, with CtrlHQ's own logo,
+  `AuthLayout.jsx` to match that skeleton exactly, with CtrlHQ's own logo and
   copy ("Ingresos, egresos y nómina bajo control", echoing the marketing
-  page's hero) and color tokens (`--primary` here is near-black/greyscale,
-  by design — matches the rest of the app's monochrome theme, so the brand
-  panel renders as a grey gradient, not a colored one; that's correct, not a
-  bug). Verified visually at desktop and mobile viewports.
+  page's hero). Verified visually at desktop and mobile viewports.
+- **Accent color**: `--primary` was originally near-black/greyscale (matching
+  every button/nav-active state in the app), which read as a missing brand
+  color once the two-column login's gradient panel made the lack of any hue
+  obvious. Sampled the teal from the actual logo PNG (`public/logo-512.png`,
+  ~`hsl(175 70% 33%)`) and applied it to `--primary`/`--sidebar-primary` (and
+  their `.dark` counterparts) in `src/index.css` — one token change that
+  flows through every button, active nav item, focus ring, and the login
+  brand panel, rather than a one-off login-page tweak.
 
 ## Build / verify
 
