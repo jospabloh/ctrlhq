@@ -1,0 +1,38 @@
+name: Production smoke test
+
+# Live-site check (see tests/e2e/smoke.spec.js's header comment for why this
+# runs here and not from any local/AI dev sandbox: those environments proxy
+# outbound HTTPS to an allowlist that doesn't include the production domain).
+# Manual so it can be run on demand right after a `base44 site deploy`
+# instead of waiting for the next scheduled tick; the daily cron is the
+# backstop that catches a regression nobody thought to trigger this for.
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_url:
+        description: "URL to test (defaults to production)"
+        required: false
+        default: "https://ctrlhq.acaciaco.com.mx"
+  schedule:
+    - cron: "0 13 * * *" # 07:00 Mexico City (UTC-6)
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
+        env:
+          SMOKE_URL: ${{ github.event.inputs.smoke_url || 'https://ctrlhq.acaciaco.com.mx' }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-test-results
+          path: test-results/
+          retention-days: 7
