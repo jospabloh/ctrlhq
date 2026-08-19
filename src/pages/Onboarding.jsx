@@ -19,6 +19,7 @@ export default function Onboarding() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
+  const [errorIsUnexpected, setErrorIsUnexpected] = useState(false);
 
   // TEMPORARY diagnostic wrapper (systematic-debugging: gather evidence before
   // another blind fix attempt) — labels which of the three awaited calls
@@ -36,6 +37,7 @@ export default function Onboarding() {
   const finishOnboarding = async (mode) => {
     setError("");
     setErrorDetail("");
+    setErrorIsUnexpected(false);
     setLoading(true);
     try {
       try {
@@ -64,11 +66,28 @@ export default function Onboarding() {
         throw err;
       }
     } catch (err) {
-      // Module 10: no dead ends — a human-readable message, not the raw
-      // axios/HTTP text, and always a way out via support (see the mailto
-      // link below). The technical detail (errorDetail) stays visible too,
-      // since it's what lets support actually diagnose this.
-      setError("No pudimos completar tu registro. Intenta de nuevo en unos minutos — si el problema sigue, contacta a soporte con el detalle de abajo.");
+      // Module 10: no dead ends. Two different cases need two different
+      // messages — conflating them (flagged in review) told a user with a
+      // real, correctable mistake (bad invite code, already has a business)
+      // to "wait and contact support" instead of just fixing their input.
+      // The signal that tells them apart: complete-onboarding's own
+      // validation errors always carry a real body ({message: "..."} — see
+      // that function's entry.ts); a request that never reached the
+      // function at all (the platform-level 404 this screen is built to
+      // survive) comes back with no body. Real body → show it verbatim,
+      // it's actionable. No body → generic message + support link.
+      const serverMessage = err?.data?.message || err?.originalError?.response?.data?.message;
+      if (serverMessage) {
+        // A real, actionable validation message from complete-onboarding
+        // itself — show it as-is, no support link needed, this is
+        // something the user can just fix (bad invite code, etc.).
+        setError(serverMessage);
+      } else {
+        setErrorIsUnexpected(true);
+        setError(
+          "No pudimos completar tu registro. Intenta de nuevo en unos minutos — si el problema sigue, contacta a soporte con el detalle de abajo."
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -96,16 +115,20 @@ export default function Onboarding() {
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm space-y-2">
             <p>{error}</p>
-            {errorDetail && (
-              <p className="font-mono text-xs opacity-80 break-all">{errorDetail}</p>
+            {errorIsUnexpected && (
+              <>
+                {errorDetail && (
+                  <p className="font-mono text-xs opacity-80 break-all">{errorDetail}</p>
+                )}
+                <a
+                  href={supportMailto()}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <LifeBuoy className="w-3.5 h-3.5" aria-hidden="true" />
+                  Contactar soporte
+                </a>
+              </>
             )}
-            <a
-              href={supportMailto()}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-            >
-              <LifeBuoy className="w-3.5 h-3.5" aria-hidden="true" />
-              Contactar soporte
-            </a>
           </div>
         )}
 
