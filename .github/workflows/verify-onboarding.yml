@@ -23,10 +23,10 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "register = create the account and send the OTP; onboard = verify the OTP and run onboarding; reset-request/purge = retire a leftover test account and its business"
+        description: "register / onboard = the single-tenant path; multitenant = two businesses, switching, and the non-member refusal; reset-request/purge = retire a leftover test account"
         required: true
         type: choice
-        options: [register, onboard, reset-request, purge]
+        options: [register, onboard, reset-request, purge, multitenant]
       reset_token:
         description: "Token from the password-reset email (phase=purge only)"
         required: false
@@ -208,3 +208,73 @@ jobs:
           echo "delete-account -> HTTP $code"; echo "body: $(cat /tmp/del.json)"
           test "$code" -lt 400 || { echo "::error::purge failed"; exit 1; }
           echo "::notice::purged business $BID (${{ inputs.business_name }})"
+
+      - name: Multi-tenant — two businesses, switch between them, and prove a non-member is refused
+        if: inputs.phase == 'multitenant'
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.otp }}" || { echo "::error::otp is required for phase=multitenant"; exit 1; }
+
+          code=$(curl -sS -o /tmp/otp.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/verify-otp" -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg e "${{ inputs.email }}" --arg c "${{ inputs.otp }}" '{email:$e,otp_code:$c}')")
+          test "$code" -lt 400 || { cat /tmp/otp.json; echo "::error::OTP verification failed"; exit 1; }
+          TOKEN=$(jq -r '.access_token' /tmp/otp.json)
+
+          onboard () {  # $1 = business name -> echoes the new business id
+            curl -sS -X POST "$API/apps/$APP_ID/functions/complete-onboarding" \
+              -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg n "$1" '{mode:"create",businessName:$n}')" \
+              | jq -r '.business.id'
+          }
+          me () { curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN"; }
+          switch () {  # $1 = business id -> echoes the HTTP status
+            curl -sS -o /tmp/sw.json -w '%{http_code}' --max-time 60 \
+              -X POST "$API/apps/$APP_ID/functions/switch-tenant" \
+              -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg b "$1" '{businessId:$b}')"
+          }
+
+          echo "--- create two businesses ---"
+          A=$(onboard "E2E Tenant A"); echo "A=$A"
+          B=$(onboard "E2E Tenant B"); echo "B=$B"
+          test -n "$A" -a "$A" != "null" -a -n "$B" -a "$B" != "null" \
+            || { echo "::error::could not create both businesses"; exit 1; }
+          test "$A" != "$B" || { echo "::error::both onboardings returned the same business"; exit 1; }
+
+          echo "--- creating the second one should have left us in it ---"
+          me | jq -c '{role, business_id}'
+          test "$(me | jq -r '.business_id')" = "$B" \
+            || { echo "::error::expected to be in B after creating it"; exit 1; }
+
+          echo "--- switch back to A ---"
+          code=$(switch "$A"); echo "switch-tenant(A) -> HTTP $code"; cat /tmp/sw.json; echo
+          test "$code" -lt 400 || { echo "::error::switching to a tenant we belong to was refused"; exit 1; }
+          AFTER=$(me); echo "$AFTER" | jq -c '{role, business_id}'
+          test "$(echo "$AFTER" | jq -r '.business_id')" = "$A" \
+            || { echo "::error::switch reported success but business_id did not move"; exit 1; }
+
+          echo "--- SECURITY: a business we are NOT a member of must be refused ---"
+          # The orphaned tenant left by the original onboarding incident. This
+          # account has no Membership for it, so switch-tenant must say no —
+          # if this ever passes, the tenant picker became a way into any tenant
+          # whose id you can guess.
+          code=$(switch "6a860fa4c538d19adbc17195")
+          echo "switch-tenant(non-member) -> HTTP $code"; cat /tmp/sw.json; echo
+          test "$code" = "403" || { echo "::error::expected 403 for a non-member, got $code — ISOLATION HOLE"; exit 1; }
+          test "$(me | jq -r '.business_id')" = "$A" \
+            || { echo "::error::a refused switch still moved business_id"; exit 1; }
+
+          echo "::notice::PASS — two tenants, switch works, non-member refused with 403"
+
+          echo "--- cleanup ---"
+          for pair in "$A:E2E Tenant A" "$B:E2E Tenant B"; do
+            id="${pair%%:*}"; name="${pair#*:}"
+            switch "$id" >/dev/null
+            code=$(curl -sS -o /tmp/del.json -w '%{http_code}' --max-time 120 \
+              -X POST "$API/apps/$APP_ID/functions/delete-account" \
+              -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+              -d "$(jq -nc --arg b "$id" --arg n "$name" '{businessId:$b,confirmName:$n}')")
+            echo "delete-account($name) -> HTTP $code"
+            [ "$code" -lt 400 ] || echo "::warning::$name ($id) still needs removing by hand"
+          done
