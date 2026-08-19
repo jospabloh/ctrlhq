@@ -69,9 +69,9 @@ Deno.serve(async (req) => {
     if (!user) {
       return Response.json({ message: "Unauthorized" }, { status: 401 });
     }
-    if (user.business_id) {
-      return Response.json({ message: "Ya perteneces a un negocio." }, { status: 409 });
-    }
+    // No blanket "you already have a business" rejection any more: a user may
+    // belong to several tenants (see base44/entities/Membership.jsonc). Joining
+    // one twice is still refused, below, where we know which one.
 
     const { mode, businessName, inviteCode } = await req.json();
 
@@ -86,6 +86,12 @@ Deno.serve(async (req) => {
         invite_code: randomInviteCode(),
       });
       try {
+        await base44.asServiceRole.entities.Membership.create({
+          business_id: business.id,
+          user_id: user.id,
+          user_email: user.email,
+          role: "business_admin",
+        });
         await withTimeout(
           base44.asServiceRole.entities.User.update(user.id, {
             ...rolePatchFor(user, "business_admin"),
@@ -102,6 +108,12 @@ Deno.serve(async (req) => {
         // security edge. Best-effort: if the rollback itself fails, the
         // original error is still what the caller needs to hear.
         try {
+          const stale = await base44.asServiceRole.entities.Membership.filter(
+            { business_id: business.id }, null, 100
+          );
+          for (const m of stale || []) {
+            await base44.asServiceRole.entities.Membership.delete(m.id);
+          }
           await base44.asServiceRole.entities.Business.delete(business.id);
         } catch (_) { /* keep reporting the original failure */ }
         throw error;
@@ -119,9 +131,22 @@ Deno.serve(async (req) => {
       if (!business) {
         return Response.json({ message: "Código de invitación inválido." }, { status: 404 });
       }
+      const already = await base44.asServiceRole.entities.Membership.filter(
+        { user_id: user.id, business_id: business.id }, null, 1
+      );
+      if (!already?.length) {
+        await base44.asServiceRole.entities.Membership.create({
+          business_id: business.id,
+          user_id: user.id,
+          user_email: user.email,
+          role: "staff",
+        });
+      } else if (user.business_id === business.id) {
+        return Response.json({ message: "Ya perteneces a ese negocio." }, { status: 409 });
+      }
       await withTimeout(
         base44.asServiceRole.entities.User.update(user.id, {
-          ...rolePatchFor(user, "staff"),
+          ...rolePatchFor(user, already?.[0]?.role || "staff"),
           business_id: business.id,
         }),
         25_000,
