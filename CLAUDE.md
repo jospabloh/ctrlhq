@@ -406,15 +406,20 @@ Mission Control migrations are applied to production.
    attempts, not by the bug, which is now fixed and verified. Onboarding
    works, so creating a business from `/onboarding` in the browser will
    complete normally and move that account to `business_admin`.
-2. Stray `Business` rows to delete from Cuenta's danger zone (the platform
-   admin may delete any business; `delete-account` allows it): the orphans
-   from the failed attempts — "Roseta Cafeteria"
-   (`6a860fa4c538d19adbc17195`) and two "Owner Sandbox" rows
-   (`6a8622701fd0abf41ff517c6`, `6a8625b144e9a1cad5777cba`) — plus
-   "E2E Verification" 1 and 2 and their `h.josepablo+ctrlhq-e2e-*` test
-   users, left by the first verification runs before that workflow learned
-   to clean up after itself. Entity deletes are not reachable through the
-   Base44 MCP tooling, so these need the app's own danger zone.
+2. Three orphaned `Business` rows are still there, left by the failed
+   onboarding attempts — `6a860fa4c538d19adbc17195` (was "Roseta
+   Cafeteria") and `6a8622701fd0abf41ff517c6` / `6a8625b144e9a1cad5777cba`
+   (both "Owner Sandbox"). They have been **neutralized**: `invite_code`
+   cleared so nobody can join one, `billing_status: suspended`, and renamed
+   to `[HUERFANO - BORRAR] ...` so they are obvious in any list. They still
+   need a real delete. Entity deletes are not reachable through the Base44
+   MCP tooling, and `delete-account` needs a caller who is either that
+   business's own `business_admin` (nobody is) or the platform admin — so
+   this is the platform owner's to run, from an authenticated session.
+   Everything the verification runs created has already been cleaned up:
+   all four "E2E Verification" businesses were purged through
+   `delete-account`, and the four `h.josepablo+ctrlhq-e2e-*` users are back
+   to `role: staff` with no `business_id`.
 3. Confirm the `acaciaControl` bridge actually round-trips
    (not just "deployed") — click "Sincronizar ahora" on this app's page in
    Mission Control, or wait for the next 08:00 UTC `api/cron/sync.js` run,
