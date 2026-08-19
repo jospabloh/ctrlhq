@@ -34,14 +34,40 @@ Deno.serve(async (req) => {
       if (!["business_admin", "staff"].includes(role)) {
         return Response.json({ message: "role inválido." }, { status: 400 });
       }
+      // Membership.role is the durable record — User.role only reflects the
+      // member's role in whatever tenant they are in right now. Updating just
+      // User.role would silently revert the change the next time they switched
+      // away and back, because switch-tenant restores role from Membership.
+      const rows = await base44.asServiceRole.entities.Membership.filter(
+        { user_id: memberId, business_id: member.business_id }, null, 1
+      );
+      if (rows?.[0]) {
+        await base44.asServiceRole.entities.Membership.update(rows[0].id, { role });
+      }
       const updated = await base44.asServiceRole.entities.User.update(memberId, { role });
       return Response.json({ member: updated });
     }
 
     if (action === "remove") {
+      // Drop the Membership FIRST, and treat it as the removal. Clearing
+      // business_id alone would not remove anyone: the membership is what
+      // grants the right to re-enter, so switch-tenant would happily let them
+      // straight back in through the tenant picker.
+      const rows = await base44.asServiceRole.entities.Membership.filter(
+        { user_id: memberId, business_id: member.business_id }, null, 100
+      );
+      for (const m of rows || []) {
+        await base44.asServiceRole.entities.Membership.delete(m.id);
+      }
+      // Only evict them from the tenant they are actually sitting in. Someone
+      // removed from tenant A while working in tenant B keeps working in B.
+      const stillElsewhere = await base44.asServiceRole.entities.Membership.filter(
+        { user_id: memberId }, null, 1
+      );
+      const fallback = stillElsewhere?.[0];
       const updated = await base44.asServiceRole.entities.User.update(memberId, {
-        role: "staff",
-        business_id: null,
+        role: fallback ? fallback.role : "staff",
+        business_id: fallback ? fallback.business_id : null,
       });
       return Response.json({ member: updated });
     }
