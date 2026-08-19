@@ -100,10 +100,16 @@ jobs:
           fi
 
           echo "--- state AFTER onboarding (the actual assertion) ---"
+          # This is what the browser sees: AuthContext.checkUserAuth() calls
+          # auth.me() on the SAME token issued before onboarding, and App.jsx
+          # gates /onboarding on user.business_id. If auth.me() does not
+          # reflect the write, the user stays stuck on the onboarding screen
+          # even though the database row is correct — so assert on this, not
+          # on the entity API.
           curl -sS "$API/apps/$APP_ID/auth/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me.json
-          jq -c '{role, business_id}' /tmp/me.json
+          echo "raw /auth/me body:"; cat /tmp/me.json; echo
           BID=$(jq -r '.business_id // empty' /tmp/me.json)
           ROLE=$(jq -r '.role // empty' /tmp/me.json)
-          test -n "$BID" || { echo "::error::business_id is still unset — User.update did not take effect"; exit 1; }
+          test -n "$BID" || { echo "::error::business_id is still unset — the browser would stay stuck on /onboarding"; exit 1; }
           test "$ROLE" = "business_admin" || { echo "::error::expected role business_admin, got '$ROLE'"; exit 1; }
           echo "::notice::PASS — onboarding wrote business_id=$BID role=$ROLE"
