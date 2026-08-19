@@ -10,21 +10,47 @@ import {
   Menu,
   X,
   Wallet,
+  UserCircle,
+  LifeBuoy,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/lib/PermissionContext";
+
+const BILLING_BANNER = {
+  view_only: {
+    text: "Tu negocio está en modo de solo lectura. Ve a Cuenta para revisar tu plan.",
+    className: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+  },
+  suspended: {
+    text: "Tu negocio está suspendido. Ve a Cuenta o contacta a Soporte para reactivarlo.",
+    className: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200",
+  },
+};
 
 const navItems = [
   { path: "/", label: "Resumen", icon: LayoutDashboard },
   { path: "/ingresos", label: "Ingresos", icon: TrendingUp },
   { path: "/egresos", label: "Egresos", icon: TrendingDown },
-  { path: "/nomina", label: "Nómina", icon: Users },
+  // Nómina hidden below for staff — Payroll's RLS excludes them from even
+  // reading (base44/entities/Payroll.jsonc), so showing the link would just
+  // open a page that immediately says "no access".
+  { path: "/nomina", label: "Nómina", icon: Users, permission: "Nomina:view" },
   { path: "/consumos-equipo", label: "Consumos Equipo", icon: Utensils },
   { path: "/configuracion", label: "Configuración", icon: Settings },
+  { path: "/cuenta", label: "Cuenta", icon: UserCircle },
+  { path: "/soporte", label: "Soporte", icon: LifeBuoy },
 ];
 
 export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { can, business } = usePermissions();
+  const visibleNavItems = navItems.filter((item) => !item.permission || can(item.permission));
+  // Module 1: billing_status is read-only here — Mission Control's cron is
+  // the only writer. This banner is the UI-degrade the module requires,
+  // never a place to self-serve a status change.
+  const billingBanner = BILLING_BANNER[business?.billing_status];
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -56,7 +82,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="p-3 space-y-1">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             return (
@@ -89,6 +115,12 @@ export default function Layout() {
 
       {/* Main content */}
       <main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">
+        {billingBanner && (
+          <div className={cn("flex items-center gap-2 px-4 py-2.5 text-sm font-medium", billingBanner.className)}>
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {billingBanner.text}
+          </div>
+        )}
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
           <Outlet />
         </div>

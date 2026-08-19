@@ -127,6 +127,19 @@ export default function Login() {
           )}
         </Button>
       </form>
+
+      {/* Module 10: no dead ends — a locked-out or prospective tenant always
+          has somewhere to go from here. */}
+      <p className="text-center text-xs text-muted-foreground mt-6">
+        ¿Aún no tienes una cuenta de negocio?{" "}
+        <a href="https://acaciaco.com.mx/apps/ctrlhq.html" className="text-primary hover:underline">
+          Conoce CtrlHQ
+        </a>
+        {" · "}
+        <a href="mailto:soporte@acaciaco.com.mx" className="text-primary hover:underline">
+          ¿Problemas para entrar? Contacta soporte
+        </a>
+      </p>
     </AuthLayout>
   );
 }

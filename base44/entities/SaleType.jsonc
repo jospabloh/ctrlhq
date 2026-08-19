@@ -2,15 +2,36 @@
   "name": "SaleType",
   "type": "object",
   "properties": {
-    "name": {
-      "type": "string"
-    },
-    "active": {
-      "type": "boolean",
-      "default": true
-    }
+    "business_id": { "type": "string", "description": "Tenant (Business.id) dueño de este registro" },
+    "name": { "type": "string" },
+    "active": { "type": "boolean", "default": true }
   },
-  "required": [
-    "name"
-  ]
+  "required": ["business_id", "name"],
+  // RLS (Module 4): same shape as Collaborator.
+  "rls": {
+    "create": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.business_id": "{{user.data.business_id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    }
+  }
 }

@@ -2,46 +2,46 @@
   "name": "Payroll",
   "type": "object",
   "properties": {
-    "date": {
-      "type": "string",
-      "format": "date"
-    },
-    "collaborator": {
-      "type": "string"
-    },
-    "base_salary": {
-      "type": "number"
-    },
-    "overtime_hours": {
-      "type": "number",
-      "default": 0
-    },
-    "overtime_pay": {
-      "type": "number",
-      "default": 0
-    },
-    "vacation_days": {
-      "type": "number",
-      "default": 0
-    },
-    "absences": {
-      "type": "number",
-      "default": 0
-    },
-    "deductions": {
-      "type": "number",
-      "default": 0
-    },
-    "total": {
-      "type": "number"
-    },
-    "notes": {
-      "type": "string"
-    }
+    "business_id": { "type": "string", "description": "Tenant (Business.id) dueño de este registro" },
+    "date": { "type": "string", "format": "date" },
+    "collaborator": { "type": "string" },
+    "base_salary": { "type": "number" },
+    "overtime_hours": { "type": "number", "default": 0 },
+    "overtime_pay": { "type": "number", "default": 0 },
+    "vacation_days": { "type": "number", "default": 0 },
+    "absences": { "type": "number", "default": 0 },
+    "deductions": { "type": "number", "default": 0 },
+    "total": { "type": "number" },
+    "notes": { "type": "string" }
   },
-  "required": [
-    "date",
-    "collaborator",
-    "base_salary"
-  ]
+  "required": ["business_id", "date", "collaborator", "base_salary"],
+  // RLS (Module 4): payroll is sensitive — unlike Income/Expense, staff has
+  // NO access at all here (not even read); every op is business_admin-only
+  // within the tenant, plus the service-role admin branch.
+  "rls": {
+    "create": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    }
+  }
 }

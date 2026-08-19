@@ -29,6 +29,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/AuthContext";
+import { usePermissions } from "@/lib/PermissionContext";
 
 const formatCurrency = (n) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
@@ -61,6 +63,8 @@ export default function Egresos() {
   const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
 
   useEffect(() => {
     loadData();
@@ -112,6 +116,7 @@ export default function Egresos() {
         ...form,
         amount: Number(form.amount),
         invoice_number: form.invoice_status === "no_requerida" ? "NA" : form.invoice_number,
+        business_id: user.business_id,
       };
       if (editingId) {
         await base44.entities.Expense.update(editingId, payload);
@@ -151,9 +156,11 @@ export default function Egresos() {
         title="Egresos"
         description={`${filteredRecords.length} registros · Total: ${formatCurrency(total)}`}
         action={
-          <Button onClick={openAdd}>
-            <Plus className="w-4 h-4 mr-2" /> Nuevo Egreso
-          </Button>
+          can("Egresos:create") && (
+            <Button onClick={openAdd}>
+              <Plus className="w-4 h-4 mr-2" /> Nuevo Egreso
+            </Button>
+          )
         }
       />
 
@@ -212,9 +219,11 @@ export default function Egresos() {
                         <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-muted rounded-lg">
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(r.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {can("Egresos:delete") && (
+                          <button onClick={() => handleDelete(r.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

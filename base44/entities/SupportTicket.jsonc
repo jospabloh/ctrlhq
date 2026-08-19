@@ -1,122 +1,44 @@
 {
   "name": "SupportTicket",
+  "type": "object",
   "properties": {
-    "business_id": {
-      "description": "Tenant (Business.id) que abre el ticket",
-      "type": "string"
-    },
-    "category": {
-      "default": "soporte",
-      "enum": [
-        "soporte",
-        "mejora"
-      ],
-      "type": "string"
-    },
-    "message": {
-      "type": "string"
-    },
-    "status": {
-      "default": "submitted",
-      "enum": [
-        "submitted",
-        "resolved"
-      ],
-      "type": "string"
-    },
-    "subject": {
-      "type": "string"
-    },
+    "business_id": { "type": "string", "description": "Tenant (Business.id) que abre el ticket" },
+    "subject": { "type": "string" },
+    "category": { "type": "string", "enum": ["soporte", "mejora"], "default": "soporte" },
+    "message": { "type": "string" },
+    "status": { "type": "string", "enum": ["submitted", "resolved"], "default": "submitted" },
     "synced_to_mission_control": {
+      "type": "boolean",
       "default": false,
-      "description": "true una vez que el ingest HMAC de Mission Control confirm\u00f3 la escritura en su bodega (tickets)",
-      "rls": {
-        "write": {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
-      },
-      "type": "boolean"
+      "description": "true una vez que el ingest HMAC de Mission Control confirmó la escritura en su bodega (tickets). Ver Module 8.",
+      "rls": { "write": { "user_condition": { "role": "admin" } } }
     }
   },
-  "required": [
-    "business_id",
-    "subject",
-    "message"
-  ],
+  "required": ["business_id", "subject", "message"],
+  // Module 8: writes to this app first (tenant-scoped, business_admin +
+  // staff can open a ticket); status is business_admin/admin only (no
+  // per-app triage UI beyond submitted/resolved — triage happens in
+  // Mission Control once synced).
   "rls": {
     "create": {
       "$or": [
-        {
-          "$and": [
-            {
-              "data.business_id": "{{user.data.business_id}}"
-            },
-            {
-              "user_condition": {
-                "role": "business_admin"
-              }
-            }
-          ]
-        },
-        {
-          "$and": [
-            {
-              "data.business_id": "{{user.data.business_id}}"
-            },
-            {
-              "user_condition": {
-                "role": "staff"
-              }
-            }
-          ]
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "staff" } }] },
+        { "user_condition": { "role": "admin" } }
       ]
-    },
-    "delete": {
-      "user_condition": {
-        "role": "admin"
-      }
     },
     "read": {
       "$or": [
-        {
-          "data.business_id": "{{user.data.business_id}}"
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
+        { "data.business_id": "{{user.data.business_id}}" },
+        { "user_condition": { "role": "admin" } }
       ]
     },
     "update": {
       "$or": [
-        {
-          "$and": [
-            {
-              "data.business_id": "{{user.data.business_id}}"
-            },
-            {
-              "user_condition": {
-                "role": "business_admin"
-              }
-            }
-          ]
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
       ]
-    }
-  },
-  "type": "object"
+    },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
 }
