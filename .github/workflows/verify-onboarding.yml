@@ -1,7 +1,7 @@
 name: Verify onboarding end-to-end
 
 # Exercises the REAL onboarding write path against the live Base44 app:
-# register -> verify OTP -> POST complete-onboarding -> read back /auth/me.
+# register -> verify OTP -> POST complete-onboarding -> read back the user.
 #
 # Why a workflow and not a local script: outbound HTTPS from the dev/AI
 # sandboxes is proxied to an allowlist that excludes base44.app (confirmed by
@@ -80,7 +80,7 @@ jobs:
           echo "got an access token (len ${#TOKEN})"
 
           echo "--- state BEFORE onboarding ---"
-          curl -sS "$API/apps/$APP_ID/auth/me" -H "Authorization: Bearer $TOKEN" \
+          curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" \
             | jq -c '{role, business_id}'
 
           echo "--- complete-onboarding ---"
@@ -106,8 +106,8 @@ jobs:
           # reflect the write, the user stays stuck on the onboarding screen
           # even though the database row is correct — so assert on this, not
           # on the entity API.
-          curl -sS "$API/apps/$APP_ID/auth/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me.json
-          echo "raw /auth/me body:"; cat /tmp/me.json; echo
+          curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me.json
+          echo "raw entities/User/me body:"; cat /tmp/me.json; echo
           BID=$(jq -r '.business_id // empty' /tmp/me.json)
           ROLE=$(jq -r '.role // empty' /tmp/me.json)
           test -n "$BID" || { echo "::error::business_id is still unset — the browser would stay stuck on /onboarding"; exit 1; }
