@@ -200,12 +200,20 @@ are deployed and confirmed against the live Base44 app; both Mission Control
 migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. Deploy the `acaciaControl` function (`base44 functions deploy --app-id
-   6a7b5d0edb6b035ccae558f3`) and set `INGEST_HMAC_SECRET` on this app (`base44
-   secrets set`, matching Mission Control's value) — until both are done,
-   Modules 1/5/8's Mission-Control-side sync stays wired but dark.
-2. Confirm/replace the placeholder WhatsApp number and pricing copy on
-   `apps/ctrlhq.html` with real ones before treating it as final marketing copy.
+1. **The one real blocker left**: deploy the `acaciaControl` function (`base44
+   functions deploy --app-id 6a7b5d0edb6b035ccae558f3`) and set
+   `INGEST_HMAC_SECRET` on this app (`base44 secrets set`, matching Mission
+   Control's value) — until both are done, Modules 1/5/8's Mission-Control-side
+   sync stays wired but dark. This needs a human running the Base44 CLI from a
+   real terminal (device-code login the sandbox's `run_command` tool can't
+   complete) — not something this session can finish unattended.
+2. `apps/ctrlhq.html`'s WhatsApp number (`524498958291`) matches every other
+   portfolio app's marketing page — it's real, not a placeholder. Its
+   "Cotización" pricing (vs. other apps' flat MXN/mes prices) also isn't a bug:
+   it matches `licenseControl.js`'s `payment: 'ref'` billing mode for this app
+   (no Mercado Pago wired yet, same situation as cateqhub's manually-priced
+   Premium tier) — a flat number would need a real pricing decision from the
+   business, not a value invented here.
 3. The `npm run typecheck` gap is portfolio-wide (confirmed against stockflow,
    see Build/verify above) — not a ctrlhq-specific follow-up, but worth fixing
    across the portfolio's shadcn/ui components someday.
