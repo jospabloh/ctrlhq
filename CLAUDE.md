@@ -188,6 +188,35 @@ CLI directly for anything auth-gated).
   that error object into `null` fields and produced a convincing false
   failure. Assert against the endpoint the client actually calls.)
 
+- **Second case, same symptom, different cause: the platform owner's own
+  account.** After the RLS fix above, every ordinary account onboards (four
+  fresh ones verified), but `h.josepablo@gmail.com` kept failing with the
+  same empty-bodied 500 — a real retry at 22:29:53 created yet another
+  "Owner Sandbox" while that User row stayed untouched (`updated_date` still
+  `2026-08-11T17:34:07`, the day it was created — it has never been written
+  to). The one thing different about that account is that it **owns the
+  app**: `role: "admin"`, `collaborator_role: "editor"`, `_app_role`
+  mirroring `role`. It is this app's Base44 collaborator record, and writing
+  `role` away from `"admin"` on it never returns. Every test account had
+  `collaborator_role: null`.
+
+  That write should never have been attempted: `admin` is the ACACIA
+  *platform* tier, not a tenant tier (`src/lib/rbac.js`), so demoting the
+  owner to `business_admin` for creating a business strips the tier every
+  entity's RLS service-role branch is written against. stockflow's
+  `restoreOwnerAdmin` writes `{ business_id, role: "admin" }` — owner stays
+  admin *with* a tenant. `complete-onboarding` now does the same: a caller
+  already at `role: "admin"` gets a `business_id` and keeps their role.
+  Alongside it, the User write is bounded at 25s (a hang otherwise reaches
+  the browser as an unexplainable empty 500) and `Business.create` is rolled
+  back when the write fails, so a failed attempt stops leaving an orphaned
+  tenant with a live invite code behind.
+
+  **This one needs `base44 functions deploy` to take effect** — unlike the
+  RLS fix, it changes function code. Until that deploy runs, the owner's
+  account stays stuck; any other (non-collaborator) account onboards fine
+  today.
+
   The prior `{error}`→`{message}` and SDK-pin fixes were real improvements
   worth keeping — they are why the UI now surfaces a real status and body
   instead of a masked generic message, which is what made this diagnosable
