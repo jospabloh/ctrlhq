@@ -46,9 +46,32 @@ Deno.serve(async (req) => {
       deletedCounts[entityName] = result?.deleted ?? 0;
     }
 
+    // Memberships for this tenant go too, otherwise the tenant picker would
+    // keep offering a business that no longer exists.
+    const memberships = await base44.asServiceRole.entities.Membership.filter(
+      { business_id: businessId }, null, 500
+    );
+    for (const m of memberships || []) {
+      await base44.asServiceRole.entities.Membership.delete(m.id);
+    }
+
+    // Anyone sitting in this tenant has to land somewhere. If they belong to
+    // another business, drop them into it with the role it grants; otherwise
+    // they fall back to onboarding, which is the documented behaviour — this
+    // function has never deleted login identities.
     const members = await base44.asServiceRole.entities.User.filter({ business_id: businessId });
     for (const member of members) {
-      await base44.asServiceRole.entities.User.update(member.id, { role: "staff", business_id: null });
+      const elsewhere = await base44.asServiceRole.entities.Membership.filter(
+        { user_id: member.id }, null, 1
+      );
+      const fallback = elsewhere?.[0];
+      await base44.asServiceRole.entities.User.update(member.id, {
+        // The platform owner keeps "admin" — writing role on that account
+        // fails, and demoting them would be wrong anyway (see
+        // complete-onboarding's header).
+        ...(member.role === "admin" ? {} : { role: fallback ? fallback.role : "staff" }),
+        business_id: fallback ? fallback.business_id : null,
+      });
     }
 
     await base44.asServiceRole.entities.Business.delete(businessId);
