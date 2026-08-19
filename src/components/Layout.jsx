@@ -75,11 +75,23 @@ export default function Layout() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
+        {/* The tenant you are operating on has to be visible at all times. A
+            multi-tenant app that never names the current tenant leaves you
+            guessing whose numbers are on screen — and the numbers look
+            identical whichever tenant you are in. The app name is the
+            subtitle here; the business is the headline. */}
         <div className="h-16 flex items-center gap-2 px-6 border-b border-sidebar-border">
-          <img src="/logo-192.png" alt="CtrlHQ" className="w-9 h-9" />
-          <div>
-            <p className="font-heading font-semibold text-sm text-sidebar-foreground">CtrlHQ</p>
-            <p className="text-xs text-muted-foreground">Gestión Financiera</p>
+          <img src="/logo-192.png" alt="CtrlHQ" className="w-9 h-9 shrink-0" />
+          <div className="min-w-0">
+            <p
+              className="font-heading font-semibold text-sm text-sidebar-foreground truncate"
+              title={business?.name || undefined}
+            >
+              {business?.name || "CtrlHQ"}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {business?.name ? "CtrlHQ · Gestión Financiera" : "Gestión Financiera"}
+            </p>
           </div>
         </div>
         <nav className="p-3 space-y-1">
