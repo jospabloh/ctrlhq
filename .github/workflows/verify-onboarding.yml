@@ -247,10 +247,20 @@ jobs:
           test -n "$TOKEN" -a "$TOKEN" != "null" || { echo "::error::no access_token"; exit 1; }
 
           onboard () {  # $1 = business name -> echoes the new business id
-            curl -sS -X POST "$API/apps/$APP_ID/functions/complete-onboarding" \
+            # Print the status and full body. Swallowing these cost a round
+            # trip once already: "id was null" says nothing about why.
+            local code
+            code=$(curl -sS -o /tmp/onb.json -w '%{http_code}' --max-time 60 \
+              -X POST "$API/apps/$APP_ID/functions/complete-onboarding" \
               -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-              -d "$(jq -nc --arg n "$1" '{mode:"create",businessName:$n}')" \
-              | jq -r '.business.id'
+              -d "$(jq -nc --arg n "$1" '{mode:"create",businessName:$n}')")
+            echo "  complete-onboarding($1) -> HTTP $code" >&2
+            echo "  body: $(cat /tmp/onb.json)" >&2
+            jq -r '.business.id // empty' /tmp/onb.json
+          }
+          memberships () {
+            curl -sS "$API/apps/$APP_ID/entities/Membership?q=$(jq -rn --arg u "$UID" '{user_id:$u}|@uri')" \
+              -H "Authorization: Bearer $TOKEN"
           }
           me () { curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN"; }
           switch () {  # $1 = business id -> echoes the HTTP status
@@ -260,9 +270,14 @@ jobs:
               -d "$(jq -nc --arg b "$1" '{businessId:$b}')"
           }
 
+          UID=$(curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" | jq -r '.id')
+          echo "acting as user $UID"
+
           echo "--- create two businesses ---"
           A=$(onboard "E2E Tenant A"); echo "A=$A"
+          echo "  memberships after A: $(memberships)"
           B=$(onboard "E2E Tenant B"); echo "B=$B"
+          echo "  memberships after B: $(memberships)"
           test -n "$A" -a "$A" != "null" -a -n "$B" -a "$B" != "null" \
             || { echo "::error::could not create both businesses"; exit 1; }
           test "$A" != "$B" || { echo "::error::both onboardings returned the same business"; exit 1; }
