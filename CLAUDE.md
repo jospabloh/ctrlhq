@@ -104,9 +104,16 @@ CLI directly for anything auth-gated).
   `api/control/run-sync` on demand rather than waiting for tomorrow's cron.
 - The standalone `health` function above is *not* what Mission Control
   actually polls for Module 5 — `api/cron/sync.js`'s `probeAppHealth` calls
-  `acaciaControl`'s `ping` action instead. `health` is harmless to keep (a
-  human or an uptime tool can still hit it directly) but isn't the real
-  integration point.
+  `acaciaControl`'s `ping` action instead. It's kept as a convenience for a
+  human or an external uptime monitor to hit directly, *not* harmless to
+  leave unauthenticated: Base44's own security scan flagged the earlier
+  version as an unprotected backend function — no caller check at all before
+  a real `asServiceRole.entities.Business.list` query, and the error branch
+  echoed `error.message` to anonymous callers. **Fixed 2026-08-19**: gated on
+  the same `INGEST_HMAC_SECRET` shared with Mission Control, checked as a
+  simple bearer value in the `x-health-secret` header (there's no request
+  body here to sign, unlike `acaciaControl`'s full HMAC), and the error
+  response no longer echoes `error.message`.
 
 ## Modules 6–10
 
@@ -172,6 +179,17 @@ CLI directly for anything auth-gated).
   browser. Also matched stockflow's `checkUserAuth`: only a 401 means the
   session itself is invalid — a 403 is a permission error on an otherwise
   valid session and must not bounce a legitimate user to `/login`.
+  **A second, separate gap found afterward**: even once reachable, the login
+  screen didn't *look* like the rest of the portfolio's. `AuthLayout.jsx` was
+  a single centered card; stockflow's (and per its own comment, rumbo's) is a
+  two-column desktop layout — form on the left, a gradient brand panel with a
+  pill badge + headline + copy on the right, hidden on mobile. Rebuilt
+  `AuthLayout.jsx` to match that skeleton exactly, with CtrlHQ's own logo,
+  copy ("Ingresos, egresos y nómina bajo control", echoing the marketing
+  page's hero) and color tokens (`--primary` here is near-black/greyscale,
+  by design — matches the rest of the app's monochrome theme, so the brand
+  panel renders as a grey gradient, not a colored one; that's correct, not a
+  bug). Verified visually at desktop and mobile viewports.
 
 ## Build / verify
 
