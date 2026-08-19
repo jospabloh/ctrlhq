@@ -14,6 +14,45 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 // mode "join": the caller redeems an existing business's invite_code and
 // becomes staff.
 
+// The platform owner (role "admin") keeps that role when they join a tenant —
+// they get a business_id and nothing else. Two reasons:
+//
+// 1. Correctness. "admin" is the ACACIA platform tier, not a tenant tier
+//    (src/lib/rbac.js). Demoting the owner to business_admin because they
+//    happened to create a business would strip the tier every entity's RLS
+//    service-role branch is written against. stockflow does the same thing —
+//    restoreOwnerAdmin writes { business_id, role: "admin" }, keeping the
+//    owner an admin *with* a tenant.
+//
+// 2. It does not work anyway. The owner's User row is also the app's Base44
+//    collaborator record (collaborator_role: "editor", _app_role mirroring
+//    role). Writing role away from "admin" on that row never returns — the
+//    request hangs and the runtime kills it, so the browser sees an
+//    empty-bodied HTTP 500. Every other account onboards fine; this one
+//    account did not, and the only thing different about it is that it owns
+//    the app.
+function rolePatchFor(user: { role?: string }, tenantRole: string) {
+  return user.role === "admin" ? {} : { role: tenantRole };
+}
+
+// asServiceRole writes to the built-in User entity can hang rather than throw
+// (see base44/entities/User.jsonc's header comment). A hang gives the caller
+// an empty-bodied 500 with nothing to act on, so bound it and report what
+// actually happened instead.
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} no respondió en ${ms / 1000}s.`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function randomInviteCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
   let code = "";
@@ -46,10 +85,27 @@ Deno.serve(async (req) => {
         billing_status: "trial",
         invite_code: randomInviteCode(),
       });
-      await base44.asServiceRole.entities.User.update(user.id, {
-        role: "business_admin",
-        business_id: business.id,
-      });
+      try {
+        await withTimeout(
+          base44.asServiceRole.entities.User.update(user.id, {
+            ...rolePatchFor(user, "business_admin"),
+            business_id: business.id,
+          }),
+          25_000,
+          "La asignación de tu negocio a tu cuenta"
+        );
+      } catch (error) {
+        // The Business landed but nobody got attached to it. Roll it back
+        // rather than leaving a tenant with an invite code and no members —
+        // five of those accumulated while this bug was being chased, and a
+        // stray invite code is the one part of that mess with a real
+        // security edge. Best-effort: if the rollback itself fails, the
+        // original error is still what the caller needs to hear.
+        try {
+          await base44.asServiceRole.entities.Business.delete(business.id);
+        } catch (_) { /* keep reporting the original failure */ }
+        throw error;
+      }
       return Response.json({ business });
     }
 
@@ -63,10 +119,14 @@ Deno.serve(async (req) => {
       if (!business) {
         return Response.json({ message: "Código de invitación inválido." }, { status: 404 });
       }
-      await base44.asServiceRole.entities.User.update(user.id, {
-        role: "staff",
-        business_id: business.id,
-      });
+      await withTimeout(
+        base44.asServiceRole.entities.User.update(user.id, {
+          ...rolePatchFor(user, "staff"),
+          business_id: business.id,
+        }),
+        25_000,
+        "La asignación de tu negocio a tu cuenta"
+      );
       return Response.json({ business });
     }
 
