@@ -114,9 +114,38 @@ CLI directly for anything auth-gated).
      `0.8.20` already proven working in this app's own `acaciaControl` and
      across stockflow is the well-evidenced, low-risk fix — not a confirmed
      root cause with a stack trace, but the strongest lead available.
-     **Not yet independently confirmed fixed** — needs a real retry after
-     deploy; the fix above (real error messages) means if it fails again,
-     the actual cause will finally be visible instead of masked.
+     Both real improvements, but **neither was the actual fix** — see the
+     platform-infrastructure finding immediately below, confirmed after
+     these landed.
+
+- **Root cause, definitively confirmed: this is a Base44 platform
+  infrastructure failure, not a ctrlhq code issue.** After the two fixes
+  above shipped and onboarding still failed, a clean control test settled
+  it: `curl -X POST https://base44.app/api/apps/6a7b5d0edb6b035ccae558f3/functions/health`
+  with **no auth header at all** — should 401 on a healthy app, since
+  `health`'s own bearer check runs before anything else — instead returned
+  `HTTP 404 {"error":"not-found","detail":"user worker not found"}`. That's
+  Base44's own platform error string: the request never reached this app's
+  code (the 401 bearer check, or any handler logic, never ran) because
+  Base44's serverless runtime couldn't provision/find the worker process to
+  execute *any* function in this app — reproduced identically on `health`,
+  the simplest function in the repo, ruling out anything specific to
+  `complete-onboarding`. A later retry through the actual UI (post-PR #11,
+  with the new human-readable-error UI live) surfaced a second symptom of
+  the same underlying failure: `POST .../functions/complete-onboarding ->
+  500 | body: no-body` — no response body at all, which is what the
+  SDK interceptor sees when the platform fails before the function's own
+  `Response.json(...)` ever runs, consistent with the same worker-provisioning
+  problem manifesting as a different raw status this time. **No code change
+  in this repo can fix this** — the error-key and SDK-pin fixes above were
+  real, worth keeping, and are why the UI now shows a real status/body
+  instead of a masked generic message, but they were never capable of
+  fixing the actual failure. This needs Base44 platform support to restart
+  or fix worker provisioning for app `6a7b5d0edb6b035ccae558f3`; the
+  `health` curl reproduction above is the exact repro to hand them. Until
+  it's fixed, expect *every* function in this app — including
+  `acaciaControl` (see below) — to fail the same way, since they all run
+  through the same per-app worker.
 
 - **`acaciaControl`**: the generic, HMAC-gated bridge every portfolio app
   implements identically (copied verbatim from stockflow's, per its own
@@ -136,6 +165,11 @@ CLI directly for anything auth-gated).
   the bridge actually authenticates end-to-end is the "Sincronizar ahora"
   button on this app's page in Mission Control (`AppDetail.jsx`), which hits
   `api/control/run-sync` on demand rather than waiting for tomorrow's cron.
+  **Expect this to fail too until Base44 fixes the worker-provisioning issue
+  documented above** — `acaciaControl` is a function in this same app, run
+  through the same per-app worker as `health`/`complete-onboarding`; don't
+  re-diagnose a round-trip failure here as a new bug before checking whether
+  the platform issue is still open.
 - The standalone `health` function above is *not* what Mission Control
   actually polls for Module 5 — `api/cron/sync.js`'s `probeAppHealth` calls
   `acaciaControl`'s `ping` action instead. It's kept as a convenience for a
@@ -322,17 +356,31 @@ app; `INGEST_HMAC_SECRET` is set to match Mission Control's value; both
 Mission Control migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. Confirm the `acaciaControl` bridge actually round-trips (not just
-   "deployed") — click "Sincronizar ahora" on this app's page in Mission
-   Control, or wait for the next 08:00 UTC `api/cron/sync.js` run, then check
-   `public.app_health` for a `ctrlhq` row with `status: ok`.
-2. `apps/ctrlhq.html`'s WhatsApp number (`524498958291`) matches every other
+1. **Blocking everything below**: get Base44 platform support to fix worker
+   provisioning for app `6a7b5d0edb6b035ccae558f3` — see "Root cause,
+   definitively confirmed" under Backend functions above. Hand them the
+   `health` curl repro (unauthenticated request returning
+   `{"error":"not-found","detail":"user worker not found"}` instead of the
+   expected 401). Nothing that depends on a backend function running
+   (onboarding, `acaciaControl`, the standalone `health` endpoint) can be
+   verified until this is fixed — re-testing them before then just
+   reproduces the same platform failure, not a new bug.
+2. Once #1 is fixed: retry onboarding end-to-end for real (`Business.create`
+   + `User.update` both succeeding) for the platform owner's own stuck
+   account, then clean up the orphaned "Roseta Cafeteria"
+   (`6a860fa4c538d19adbc17195`) / "Owner Sandbox" Business rows left behind
+   by the failed attempts — they have `invite_code`s but nobody attached.
+3. Once #1 is fixed: confirm the `acaciaControl` bridge actually round-trips
+   (not just "deployed") — click "Sincronizar ahora" on this app's page in
+   Mission Control, or wait for the next 08:00 UTC `api/cron/sync.js` run,
+   then check `public.app_health` for a `ctrlhq` row with `status: ok`.
+4. `apps/ctrlhq.html`'s WhatsApp number (`524498958291`) matches every other
    portfolio app's marketing page — it's real, not a placeholder. Its
    "Cotización" pricing (vs. other apps' flat MXN/mes prices) also isn't a bug:
    it matches `licenseControl.js`'s `payment: 'ref'` billing mode for this app
    (no Mercado Pago wired yet, same situation as cateqhub's manually-priced
    Premium tier) — a flat number would need a real pricing decision from the
    business, not a value invented here.
-3. The `npm run typecheck` gap is portfolio-wide (confirmed against stockflow,
+5. The `npm run typecheck` gap is portfolio-wide (confirmed against stockflow,
    see Build/verify above) — not a ctrlhq-specific follow-up, but worth fixing
    across the portfolio's shadcn/ui components someday.
