@@ -23,10 +23,13 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: "register = create the account and send the OTP; onboard = verify the OTP and run onboarding"
+        description: "register = create the account and send the OTP; onboard = verify the OTP and run onboarding; reset-request/purge = retire a leftover test account and its business"
         required: true
         type: choice
-        options: [register, onboard]
+        options: [register, onboard, reset-request, purge]
+      reset_token:
+        description: "Token from the password-reset email (phase=purge only)"
+        required: false
       email:
         description: "Test account address (use a +alias so it lands in a real inbox)"
         required: true
@@ -139,3 +142,56 @@ jobs:
                 || echo "::warning::business_id survived delete-account"
             fi
           fi
+
+      - name: Request a password reset for a leftover test account
+        if: inputs.phase == 'reset-request'
+        run: |
+          set -euo pipefail
+          # Cleanup path for accounts left behind by earlier runs, from before
+          # the onboard phase learned to delete after itself. The registration
+          # OTP is single-use and the throwaway password is never kept, so a
+          # reset is the only way back into one of these accounts.
+          code=$(curl -sS -o /tmp/rr.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/reset-password-request" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg e "${{ inputs.email }}" '{email:$e}')")
+          echo "reset-password-request -> HTTP $code"
+          echo "body: $(cat /tmp/rr.json)"
+          test "$code" -lt 400 || { echo "::error::reset request failed"; exit 1; }
+          echo "::notice::reset token mailed to ${{ inputs.email }} — re-run with phase=purge."
+
+      - name: Purge a leftover test account's business
+        if: inputs.phase == 'purge'
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.reset_token }}" || { echo "::error::reset_token is required for phase=purge"; exit 1; }
+          # Password is minted here and used only within this run.
+          PW="$(openssl rand -base64 24)"
+
+          code=$(curl -sS -o /tmp/rp.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/reset-password" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg t "${{ inputs.reset_token }}" --arg p "$PW" '{reset_token:$t,new_password:$p}')")
+          echo "reset-password -> HTTP $code"
+          test "$code" -lt 400 || { echo "body: $(cat /tmp/rp.json)"; echo "::error::reset failed"; exit 1; }
+
+          code=$(curl -sS -o /tmp/li.json -w '%{http_code}' \
+            -X POST "$API/apps/$APP_ID/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg e "${{ inputs.email }}" --arg p "$PW" '{email:$e,password:$p}')")
+          echo "login -> HTTP $code"
+          test "$code" -lt 400 || { echo "body: $(cat /tmp/li.json)"; echo "::error::login failed"; exit 1; }
+          TOKEN=$(jq -r '.access_token' /tmp/li.json)
+
+          curl -sS "$API/apps/$APP_ID/entities/User/me" -H "Authorization: Bearer $TOKEN" -o /tmp/me.json
+          BID=$(jq -r '.business_id // empty' /tmp/me.json)
+          echo "user: $(jq -c '{email, role, business_id}' /tmp/me.json)"
+          if [ -z "$BID" ]; then echo "::notice::already has no business — nothing to purge"; exit 0; fi
+
+          code=$(curl -sS -o /tmp/del.json -w '%{http_code}' --max-time 120 \
+            -X POST "$API/apps/$APP_ID/functions/delete-account" \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg b "$BID" --arg n "${{ inputs.business_name }}" '{businessId:$b,confirmName:$n}')")
+          echo "delete-account -> HTTP $code"; echo "body: $(cat /tmp/del.json)"
+          test "$code" -lt 400 || { echo "::error::purge failed"; exit 1; }
+          echo "::notice::purged business $BID (${{ inputs.business_name }})"
