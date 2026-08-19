@@ -84,6 +84,40 @@ real terminal — the Base44 MCP `run_command` tool couldn't complete the
 device-code login this needs, it isn't a substitute for a human running the
 CLI directly for anything auth-gated).
 
+- **Two confirmed bugs found the first time onboarding was actually
+  exercised end-to-end** (the platform owner clicking "Crear negocio" for a
+  real business, "Roseta Cafeteria" — `Business.create` succeeded,
+  `User.update` failed, leaving him stuck: still `role: admin`, no
+  `business_id`, and an orphaned Business row with nobody attached):
+  1. **Wrong error-response key.** These four functions (not `acaciaControl`
+     — see why below) returned `{ error: "..." }` on failure, but
+     `@base44/sdk`'s axios error interceptor only reads `data.message` or
+     `data.detail` before falling back to axios's own generic text — so
+     every failure surfaced to the user as the useless "Request failed with
+     status code 500" instead of the function's real, specific message.
+     Confirmed by reading the SDK's interceptor source
+     (`node_modules/@base44/sdk/dist/utils/axios-client.js`), not
+     guessed. **Fixed**: changed `{ error: ... }` → `{ message: ... }`
+     across `complete-onboarding`/`manage-member`/`delete-account`/`health`.
+     `acaciaControl` keeps `{ error: ... }` deliberately — Mission Control's
+     `callBridge()` does its own manual `e?.response?.data?.error`
+     extraction and doesn't go through this SDK's interceptor the same way;
+     changing that key would break Mission Control's parsing instead.
+  2. **Unpinned `@base44/sdk` version.** These four functions imported
+     `npm:@base44/sdk` with no version — Deno resolves that to whatever's
+     latest at each cold start, unlike every other function in this repo
+     (`acaciaControl`) and every function in stockflow's, which pin an
+     exact version (`@base44/sdk@0.8.20`–`0.8.25`). Given the actual
+     `asServiceRole.entities.User.update()` failure couldn't be directly
+     observed (no server-log access from this session, and the error-key
+     bug above was masking the real message anyway), pinning to the same
+     `0.8.20` already proven working in this app's own `acaciaControl` and
+     across stockflow is the well-evidenced, low-risk fix — not a confirmed
+     root cause with a stack trace, but the strongest lead available.
+     **Not yet independently confirmed fixed** — needs a real retry after
+     deploy; the fix above (real error messages) means if it fails again,
+     the actual cause will finally be visible instead of masked.
+
 - **`acaciaControl`**: the generic, HMAC-gated bridge every portfolio app
   implements identically (copied verbatim from stockflow's, per its own
   header comment) — the single channel Mission Control's `api/cron/sync.js`
