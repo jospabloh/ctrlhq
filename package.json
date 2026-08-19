@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --fix",
     "validate:rls": "node scripts/validate-rls.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
+    "release": "node scripts/release.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

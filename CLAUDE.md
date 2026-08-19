@@ -27,12 +27,27 @@ publishing). This file covers CtrlHQ-specific architecture.
 
 - `src/lib/permissionRegistry.js` — the `"Section:action"` registry + per-role
   defaults, consumed by `src/lib/PermissionContext.jsx`'s `usePermissions().can()`.
-  UI-gating only.
+  UI-gating only. Also exports `PERMISSION_SECTIONS` (grouped UI metadata) and
+  `resolvePermission(key, role, overrides)`, documenting the full precedence:
+  1. platform-owner (`role: admin`) → always allowed.
+  2. an explicit `true`/`false` override for `(business_id, role, key)` in
+     `PermissionProfile` wins over the registry default — see below.
+  3. `billing_status` suspended/view_only → every write rejected regardless.
+  4. else the registry's per-role default.
+- **Tenant-admin override layer** (`PermissionProfile` entity +
+  `src/pages/Permisos.jsx`, nav-gated on `Cuenta:manage_members`): lets a
+  `business_admin` tune what their own `staff` can do beyond the hardcoded
+  registry default, matching stockflow's `PermissionAdmin.jsx` pattern. RLS on
+  `PermissionProfile` scopes writes to the caller's own `business_id` — a
+  tenant can only ever change its own staff's access, even if the client is
+  bypassed. `PermissionContext.jsx` loads the current tenant's `staff`
+  overrides on mount/`business_id` change and exposes `refreshOverrides()` so
+  `Permisos.jsx` can invalidate the cache right after saving.
 - Server-side re-check is split across two mechanisms, by what each entity's
   RLS can express:
   - **Entity-level RLS** (`base44/entities/*.jsonc`) enforces tenant isolation
     and role-based CRUD for straightforward entity writes (Ingresos, Egresos,
-    Nómina, catálogos, tickets).
+    Nómina, catálogos, tickets, `PermissionProfile` itself).
   - **`base44/functions/*` Safe functions** handle everything RLS can't:
     onboarding (`complete-onboarding`), member role changes/removal
     (`manage-member`), and irreversible account deletion (`delete-account`).
@@ -60,7 +75,7 @@ session — committing the file alone would NOT have been enough. Any future
 schema edit needs the same explicit deploy step (`base44 entities push` or the
 MCP equivalent) — verify against the live schema, don't assume the diff shipped.
 
-## Backend functions (Modules 3, 5, 7)
+## Backend functions (Modules 3, 5, 7, 8)
 
 `base44/functions/` — `complete-onboarding`, `manage-member`, `delete-account`,
 `health`. **Deployed and confirmed live** (2026-08-19, `base44 functions
@@ -69,38 +84,76 @@ real terminal — the Base44 MCP `run_command` tool couldn't complete the
 device-code login this needs, it isn't a substitute for a human running the
 CLI directly for anything auth-gated).
 
+- **`acaciaControl`**: the generic, HMAC-gated bridge every portfolio app
+  implements identically (copied verbatim from stockflow's, per its own
+  header comment) — the single channel Mission Control's `api/cron/sync.js`
+  uses for *everything* app-specific: license read/write, health `ping`,
+  ticket sync, usage/session sync. Without this deployed, none of Modules
+  1/5/8's Mission-Control-side integration actually runs, even though the app
+  is registered in Mission Control's config files — registration alone wires
+  the config, not the data path. **Added to this repo but NOT yet deployed**
+  — needs `base44 functions deploy --app-id 6a7b5d0edb6b035ccae558f3` from the
+  platform owner's terminal (same auth constraint as the other functions),
+  *and* `INGEST_HMAC_SECRET` set on this Base44 app via `base44 secrets set`
+  (shared secret with Mission Control — get the value from Mission Control's
+  own env, never re-generate it here) before Mission Control's calls will
+  authenticate.
+- The standalone `health` function above is *not* what Mission Control
+  actually polls for Module 5 — `api/cron/sync.js`'s `probeAppHealth` calls
+  `acaciaControl`'s `ping` action instead. `health` is harmless to keep (a
+  human or an uptime tool can still hit it directly) but isn't the real
+  integration point.
+
 ## Modules 6–10
 
 - **Changelog**: `src/lib/appConfig.js` (`APP_VERSION`/`RELEASE_DATE`/
-  `CHANGELOG`), surfaced in Cuenta's "Novedades" tab. No release script exists
-  yet (`scripts/release.mjs` referenced by the standard is not built) — bump
-  this file by hand until one exists; never regenerate it from `npm run build`.
+  `CHANGELOG`), surfaced in Cuenta's "Novedades" tab. `scripts/release.mjs`
+  (`npm run release`) bumps the version, stamps `RELEASE_DATE`, and inserts a
+  new `CHANGELOG` entry — drafted from the git log since the last release via
+  Anthropic if `ANTHROPIC_API_KEY_CTRLHQ` is set, else a generic one-liner
+  fallback. Modeled on stockflow's `scripts/publish-release.mjs`, trimmed to
+  drop the `generate:all`/`audit-permissions.mjs` steps stockflow has and this
+  repo doesn't. Never runs as part of `npm run build` — a human runs it
+  deliberately when cutting a release.
 - **Account & danger zone**: `src/pages/Cuenta.jsx` — profile (read-only
   billing_status/plan), member management (business_admin only, via
   `manage-member`), JSON export, irreversible delete (via `delete-account`,
   requires typing the business's exact name).
 - **Support**: `src/pages/Soporte.jsx` + `SupportTicket`/`SupportTicketMessage`
-  entities. Writes to this app first. Mission Control's own sync (not yet
-  built — see acacia-mission-control's `apps.config.ticket_entity` for this
-  app, already pointed at these entity names) is what pulls them into the
-  shared `tickets` bodega; there is no push from this app yet.
+  entities (the latter carries `author_role`/`author_name`/`author_email`,
+  field-locked so only staff replies can claim the `acacia_staff` role).
+  Writes to this app first. Mission Control's `ticketControl.js` now has a
+  `ctrlhq` entry (Module 8 sync wired) — the actual pull happens over the
+  `acaciaControl` bridge above, so it's live only once that function is
+  deployed.
 - **acaciaco-site**: `jospabloh/acaciaco-site` `apps/ctrlhq.html` + the
   `index.html` apps grid.
-- **Login**: real error state, links to the marketing page and support
-  (`src/pages/Login.jsx`); `suspended`/`view_only` are explained via a banner
-  in `src/components/Layout.jsx` (post-login, since billing_status lives on
-  the Business the user hasn't loaded yet at the login screen itself).
+- **Login/Register/ForgotPassword/ResetPassword**: `src/pages/Login.jsx` +
+  siblings, fully in Spanish (matching the portfolio convention confirmed
+  against stockflow's `Login.jsx` — this repo's own UI was already Spanish
+  everywhere else, these four auth pages just hadn't been translated yet).
+  Real error states, links to the marketing page and support.
+  `suspended`/`view_only` are explained via a banner in
+  `src/components/Layout.jsx` (post-login, since billing_status lives on the
+  Business the user hasn't loaded yet at the login screen itself).
 
 ## Build / verify
 
 - `npm run build` — Vite production build. **Passes.**
 - `npm run lint` — ESLint (0 errors) + `validate:rls`. **Passes.**
-- `npm run typecheck` — **pre-existing failures, unrelated to app-standard
-  work.** The shadcn/ui components under `src/components/ui/` aren't typed to
-  accept the props every page already passes them (`children`, `htmlFor`,
-  `className`, …); this fails identically on files this session never touched
-  (Register.jsx, ResetPassword.jsx) on the pre-standard commit. Not wired into
-  CI (`.github/workflows/ci.yml`) until fixed as its own task.
+- `npm run typecheck` — **fails, and is not wired into CI, but this is now
+  confirmed to be a portfolio-wide gap, not a ctrlhq-specific one**: cloned
+  stockflow (the reference standard app) into this session and ran its own
+  `npm run typecheck` — it fails identically, on the same root cause. The
+  shadcn/ui vendor components under `src/components/ui/` (`button.jsx`,
+  `label.jsx`, …) are plain `React.forwardRef` JS with no JSDoc prop types;
+  `jsconfig.json` excludes that folder from `checkJs`, so TS falls back to
+  inferring their exported prop type as bare `RefAttributes<any>` — every
+  page that passes them `className`/`children`/`htmlFor`/etc. (which is all
+  of them) then fails to typecheck. Fixing it for real means adding explicit
+  JSDoc prop typings to every vendored shadcn component, portfolio-wide, not
+  a ctrlhq change — out of scope here. `.github/workflows/ci.yml` documents
+  this with an inline comment.
 
 ## ACACIA Portfolio Standard
 
@@ -119,6 +172,8 @@ session — see module sections above for detail and evidence):
       are a separate layer, never conflated.
 - [x] Module 3 — Granular permissions: `permissionRegistry.js` + RLS/Safe
       functions server-side re-check, in the precedence documented above.
+      Tenant-admin override layer (`PermissionProfile` + `Permisos.jsx`) added
+      and deployed live, matching stockflow's `PermissionAdmin.jsx` pattern.
 - [x] Module 4 — RLS: four-op `$or` shape on every tenant entity, both path
       halves verified, deployed live and confirmed (via the Base44 MCP, then
       re-confirmed by `base44 entities push` from the platform owner's
@@ -126,13 +181,17 @@ session — see module sections above for detail and evidence):
       not yet into CI as a standalone job (it runs as part of `npm run lint`
       in `ci.yml`).
 - [x] Module 5 — Health: `base44/functions/health` — deployed and live.
-- [x] Module 6 — Changelog: `appConfig.js`, no release script yet (see above).
+- [x] Module 6 — Changelog: `appConfig.js` + `scripts/release.mjs`
+      (`npm run release`).
 - [x] Module 7 — Account & danger zone: `Cuenta.jsx`.
-- [x] Module 8 — Support: `Soporte.jsx` + entities; Mission Control-side pull
-      sync not yet built.
+- [x] Module 8 — Support: `Soporte.jsx` + entities + `acaciaControl` bridge +
+      Mission Control's `ticketControl.js` `ctrlhq` entry — sync is wired
+      end-to-end pending the bridge function's deploy (see Backend functions
+      above).
 - [x] Module 9 — acaciaco-site: `apps/ctrlhq.html` + apps grid entry.
 - [x] Module 10 — Login: real states, links to trial/support, dark-theme
-      correct (existing `.dark` token setup, unchanged).
+      correct (existing `.dark` token setup, unchanged), full Spanish
+      translation across Login/Register/ForgotPassword/ResetPassword.
 
 **Live since 2026-08-19**: production site at `https://ctrlhq.acaciaco.com.mx`
 (Base44-assigned domain `https://smart-angelic-flow-ledger.base44.app` still
@@ -141,10 +200,12 @@ are deployed and confirmed against the live Base44 app; both Mission Control
 migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. Confirm/replace the placeholder WhatsApp number and pricing copy on
+1. Deploy the `acaciaControl` function (`base44 functions deploy --app-id
+   6a7b5d0edb6b035ccae558f3`) and set `INGEST_HMAC_SECRET` on this app (`base44
+   secrets set`, matching Mission Control's value) — until both are done,
+   Modules 1/5/8's Mission-Control-side sync stays wired but dark.
+2. Confirm/replace the placeholder WhatsApp number and pricing copy on
    `apps/ctrlhq.html` with real ones before treating it as final marketing copy.
-2. Build Mission Control's pull-sync for `SupportTicket`/`SupportTicketMessage`
-   into the shared `tickets` bodega (Module 8) — the entities and config
-   (`apps.config.ticket_entity`) are ready, the sync job itself is not built.
-3. Fix the pre-existing `npm run typecheck` failures, then wire it into CI.
-4. Build `scripts/release.mjs` (Module 6) instead of hand-editing `appConfig.js`.
+3. The `npm run typecheck` gap is portfolio-wide (confirmed against stockflow,
+   see Build/verify above) — not a ctrlhq-specific follow-up, but worth fixing
+   across the portfolio's shadcn/ui components someday.

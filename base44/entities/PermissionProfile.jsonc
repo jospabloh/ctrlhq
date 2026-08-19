@@ -1,0 +1,47 @@
+{
+  "name": "PermissionProfile",
+  "type": "object",
+  "properties": {
+    "business_id": { "type": "string", "description": "Tenant (Business.id) dueño de este perfil" },
+    "role": {
+      "type": "string",
+      "enum": ["staff"],
+      "description": "Rol de CtrlHQ al que aplican estos overrides. business_admin no se sobre-escribe (siempre acceso total dentro de su propio negocio, por diseño)."
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Mapa 'Section:action' -> boolean. Solo las claves presentes sobre-escriben el default de src/lib/permissionRegistry.js; las ausentes siguen el default de esa clave para el rol."
+    }
+  },
+  "required": ["business_id", "role"],
+  // Module 3's "explicit tenant + role override" layer: a business_admin can
+  // tune what their own 'staff' can do beyond the hardcoded registry default,
+  // fully scoped to their own tenant — see src/pages/Permisos.jsx and
+  // src/lib/permissionRegistry.js's precedence-order comment.
+  "rls": {
+    "create": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.business_id": "{{user.data.business_id}}" },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "$and": [{ "data.business_id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
+        { "user_condition": { "role": "admin" } }
+      ]
+    }
+  }
+}

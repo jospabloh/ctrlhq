@@ -4,7 +4,14 @@
   "properties": {
     "business_id": { "type": "string", "description": "Tenant (Business.id) dueño del ticket padre" },
     "ticket_id": { "type": "string", "description": "SupportTicket.id al que pertenece este mensaje" },
-    "body": { "type": "string" }
+    "body": { "type": "string" },
+    "author_role": {
+      "type": "string",
+      "description": "'acacia_staff' cuando el mensaje lo escribe un operador desde Mission Control (via acaciaControl, service role); ausente/null para mensajes del propio negocio. Distingue el hilo en la vista de Mission Control — ver acacia-mission-control's api/_lib/ticketControl.js.",
+      "rls": { "write": { "user_condition": { "role": "admin" } } }
+    },
+    "author_name": { "type": "string", "description": "Nombre a mostrar del autor (opcional)." },
+    "author_email": { "type": "string", "description": "Email del autor (opcional)." }
   },
   "required": ["business_id", "ticket_id", "body"],
   "rls": {
