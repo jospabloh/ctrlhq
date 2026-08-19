@@ -1,4 +1,4 @@
-import { createClientFromRequest } from "npm:@base44/sdk";
+import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
 // Onboarding "Safe function" (STANDARD.md Modules 2 & 3): the ONLY place a
 // user's role/business_id are ever set. Runs the actual writes as service
@@ -28,10 +28,10 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+      return Response.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (user.business_id) {
-      return Response.json({ error: "Ya perteneces a un negocio." }, { status: 409 });
+      return Response.json({ message: "Ya perteneces a un negocio." }, { status: 409 });
     }
 
     const { mode, businessName, inviteCode } = await req.json();
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     if (mode === "create") {
       const name = (businessName || "").trim();
       if (!name) {
-        return Response.json({ error: "El nombre del negocio es obligatorio." }, { status: 400 });
+        return Response.json({ message: "El nombre del negocio es obligatorio." }, { status: 400 });
       }
       const business = await base44.asServiceRole.entities.Business.create({
         name,
@@ -56,12 +56,12 @@ Deno.serve(async (req) => {
     if (mode === "join") {
       const code = (inviteCode || "").trim().toUpperCase();
       if (!code) {
-        return Response.json({ error: "El código de invitación es obligatorio." }, { status: 400 });
+        return Response.json({ message: "El código de invitación es obligatorio." }, { status: 400 });
       }
       const matches = await base44.asServiceRole.entities.Business.filter({ invite_code: code }, null, 1);
       const business = matches?.[0];
       if (!business) {
-        return Response.json({ error: "Código de invitación inválido." }, { status: 404 });
+        return Response.json({ message: "Código de invitación inválido." }, { status: 404 });
       }
       await base44.asServiceRole.entities.User.update(user.id, {
         role: "staff",
@@ -70,8 +70,8 @@ Deno.serve(async (req) => {
       return Response.json({ business });
     }
 
-    return Response.json({ error: "mode debe ser 'create' o 'join'." }, { status: 400 });
+    return Response.json({ message: "mode debe ser 'create' o 'join'." }, { status: 400 });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ message: error.message }, { status: 500 });
   }
 });
