@@ -12,6 +12,7 @@ import {
   UserCircle,
   LifeBuoy,
   AlertTriangle,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/PermissionContext";
@@ -38,6 +39,9 @@ const navItems = [
   { path: "/consumos-equipo", label: "Consumos Equipo", icon: Utensils },
   { path: "/configuracion", label: "Configuración", icon: Settings },
   { path: "/cuenta", label: "Cuenta", icon: UserCircle },
+  // Same "runs the tenant" gate Permisos.jsx itself checks — staff never see
+  // the link, business_admin (and the platform admin) always do.
+  { path: "/permisos", label: "Permisos", icon: Shield, permission: "Cuenta:manage_members" },
   { path: "/soporte", label: "Soporte", icon: LifeBuoy },
 ];
 

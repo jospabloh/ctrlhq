@@ -17,6 +17,7 @@ import ConsumosEquipo from '@/pages/ConsumosEquipo';
 import Configuracion from '@/pages/Configuracion';
 import Cuenta from '@/pages/Cuenta';
 import Soporte from '@/pages/Soporte';
+import Permisos from '@/pages/Permisos';
 import Onboarding from '@/pages/Onboarding';
 
 const AuthenticatedApp = () => {
@@ -63,6 +64,7 @@ const AuthenticatedApp = () => {
           <Route path="/configuracion" element={<Configuracion />} />
           <Route path="/cuenta" element={<Cuenta />} />
           <Route path="/soporte" element={<Soporte />} />
+          <Route path="/permisos" element={<Permisos />} />
         </Route>
         <Route path="*" element={<PageNotFound />} />
       </Routes>

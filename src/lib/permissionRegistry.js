@@ -4,16 +4,14 @@
 // server-side re-check that mirrors the same precedence:
 //   1. platform-owner (role: admin) → always allowed (see every entity's RLS
 //      admin branch, and every base44/functions/* Safe function).
-//   2. billing_status suspended → every write rejected regardless of role
-//      (checked in the Safe functions; entity RLS does not have visibility
-//      into a *different* entity's billing_status, which is exactly why
-//      writes that must respect it go through a function, not raw RLS).
-//   3. this registry's default for the role.
-//
-// CtrlHQ has no per-tenant permission override entity (unlike stockflow's
-// PermissionProfile) — every business shares the same defaults today. If
-// that changes, add the override lookup here AND in the functions that
-// re-check it, in that order, so client and server never disagree.
+//   2. an explicit true/false override for (business_id, role, key) in
+//      PermissionProfile wins — a business_admin tunes their own tenant's
+//      'staff' role beyond the hardcoded default here (see Permisos.jsx).
+//      Enforced server-side by RLS scoping PermissionProfile to its own
+//      business_id — a tenant can only ever change its OWN staff's access.
+//   3. billing_status suspended/view_only → every write rejected regardless
+//      of role or override (see PermissionContext.can()).
+//   4. else this registry's default for the role.
 import { ROLES } from "./rbac";
 
 export const PERMISSION_REGISTRY = {
@@ -34,6 +32,58 @@ export const PERMISSION_REGISTRY = {
   "Soporte:create": { [ROLES.BUSINESS_ADMIN]: true, [ROLES.STAFF]: true },
 };
 
+// Grouped, human-readable view of the registry for the Permisos.jsx matrix.
+// Only 'staff' is ever shown as editable — business_admin is definitionally
+// the tenant owner and always has full access within their own business_id.
+export const PERMISSION_SECTIONS = [
+  {
+    section: "Ingresos",
+    keys: [
+      { key: "Ingresos:create", label: "Registrar ingresos" },
+      { key: "Ingresos:delete", label: "Eliminar ingresos" },
+    ],
+  },
+  {
+    section: "Egresos",
+    keys: [
+      { key: "Egresos:create", label: "Registrar egresos" },
+      { key: "Egresos:delete", label: "Eliminar egresos" },
+    ],
+  },
+  {
+    section: "Consumos Equipo",
+    keys: [
+      { key: "ConsumosEquipo:create", label: "Registrar consumos" },
+      { key: "ConsumosEquipo:delete", label: "Eliminar consumos" },
+    ],
+  },
+  {
+    section: "Nómina",
+    keys: [
+      { key: "Nomina:view", label: "Ver nómina" },
+      { key: "Nomina:create", label: "Registrar nómina" },
+      { key: "Nomina:edit", label: "Editar nómina" },
+      { key: "Nomina:delete", label: "Eliminar nómina" },
+    ],
+  },
+  {
+    section: "Configuración",
+    keys: [{ key: "Configuracion:manage_catalogs", label: "Gestionar catálogos" }],
+  },
+  {
+    section: "Soporte",
+    keys: [{ key: "Soporte:create", label: "Enviar tickets de soporte" }],
+  },
+];
+
 export function registryDefault(key, role) {
   return Boolean(PERMISSION_REGISTRY[key]?.[role]);
+}
+
+// Precedence step 2 above: an explicit override wins over the registry
+// default when present; `undefined`/missing falls through to the default.
+export function resolvePermission(key, role, overrides) {
+  const override = overrides?.[key];
+  if (override === true || override === false) return override;
+  return registryDefault(key, role);
 }
