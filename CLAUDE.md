@@ -64,6 +64,28 @@ access is exactly the failure mode worth designing out.
   dropdown only when there is somewhere to switch to; switching reloads the
   page so nothing from the previous tenant survives on screen.
 
+**Verification status — NOT yet confirmed live.** The code is merged and
+`npm run lint`/`npm run build` pass, but the multi-tenant path has never been
+observed working against the app, so do not assume it does. The one run that
+got far enough (2026-08-19 22:58, five minutes after the functions deploy)
+showed the *old* behaviour on both counts that distinguish it: the second
+`complete-onboarding` was refused (the pre-multi-tenancy "you already belong to
+a business" guard) and no `Membership` row appeared, even though the caller was
+moved into the business. The deployed source in the sandbox *is* the new
+version, so the most likely reading is that the function deploy had not
+propagated yet rather than that the code is wrong — but that is a hypothesis,
+not a finding. Re-run `.github/workflows/verify-onboarding.yml` with
+`phase: multitenant` to settle it; it asserts the switch works AND that a
+non-member gets a 403.
+
+**Operational gotcha for that workflow: this app's outbound mail gets throttled.**
+After roughly ten sends in an hour, Base44 stops delivering both registration
+OTPs and password-reset links — the API still answers `HTTP 200` and claims the
+mail was sent, so the failure looks like the workflow's rather than the mail
+provider's. Registration OTPs dried up first, reset links a few minutes later.
+Space the runs out, or drive the check from an account whose password is
+already known.
+
 ## Permissions (Module 3)
 
 - `src/lib/permissionRegistry.js` — the `"Section:action"` registry + per-role
