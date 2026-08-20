@@ -1,5 +1,9 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
+// See complete-onboarding's BUILD comment: deploys have silently served stale
+// code here, so every response names the build that answered it.
+const BUILD = "2026-08-20.multitenant.1";
+
 // switch-tenant — moves the caller into one of the businesses they belong to.
 //
 // This is the ONLY sanctioned way `User.business_id` changes after onboarding.
@@ -47,7 +51,7 @@ Deno.serve(async (req) => {
       return Response.json({ message: "businessId es obligatorio." }, { status: 400 });
     }
     if (user.business_id === businessId) {
-      return Response.json({ business_id: businessId, unchanged: true });
+      return Response.json({ business_id: businessId, unchanged: true, build: BUILD });
     }
 
     const isPlatformAdmin = user.role === "admin";
@@ -83,7 +87,7 @@ Deno.serve(async (req) => {
       "El cambio de negocio"
     );
 
-    return Response.json({ business_id: businessId, business });
+    return Response.json({ business_id: businessId, business, build: BUILD });
   } catch (error) {
     return Response.json({ message: error.message }, { status: 500 });
   }

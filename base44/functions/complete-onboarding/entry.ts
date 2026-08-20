@@ -1,5 +1,20 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 
+// Which build is actually answering. Bump this on every meaningful change.
+//
+// This exists because `base44 functions deploy` reported success — first
+// "deployed (1.3s)", later "unchanged" — while the runtime kept serving the
+// previous build. It was caught only by accident: the stale build rejected a
+// second business with the pre-multi-tenancy wording, which this source no
+// longer produces. Without that tell there was no way to distinguish a deploy
+// that landed from one that did not. Every response now names its build, so
+// the next person reads it off the wire instead of inferring it.
+//
+// (Deliberately paraphrased rather than quoting the old string: a comment
+// containing it makes `grep` report the guard as still present, which cost a
+// few minutes of double-checking the first time.)
+const BUILD = "2026-08-20.multitenant.1";
+
 // Onboarding "Safe function" (STANDARD.md Modules 2 & 3): the ONLY place a
 // user's role/business_id are ever set. Runs the actual writes as service
 // role so it can bypass the User entity's admin-only field lock on
@@ -118,7 +133,7 @@ Deno.serve(async (req) => {
         } catch (_) { /* keep reporting the original failure */ }
         throw error;
       }
-      return Response.json({ business });
+      return Response.json({ business, build: BUILD });
     }
 
     if (mode === "join") {
@@ -152,7 +167,7 @@ Deno.serve(async (req) => {
         25_000,
         "La asignación de tu negocio a tu cuenta"
       );
-      return Response.json({ business });
+      return Response.json({ business, build: BUILD });
     }
 
     return Response.json({ message: "mode debe ser 'create' o 'join'." }, { status: 400 });
