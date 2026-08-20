@@ -78,6 +78,40 @@ not a finding. Re-run `.github/workflows/verify-onboarding.yml` with
 `phase: multitenant` to settle it; it asserts the switch works AND that a
 non-member gets a 403.
 
+**The blocker, and it is not in this repo: `functions deploy` reports success
+while the runtime keeps serving the previous build.** Confirmed across three
+deploys and roughly two hours. `complete-onboarding` kept rejecting a second
+business with the pre-multi-tenancy wording — a string that exists in neither
+this repo nor Base44's own sandbox copy of the app (both grepped). Six minutes
+after a deploy that printed `complete-onboarding deployed (1.5s)`, the runtime
+still produced it.
+
+The `phase: probe` step in `verify-onboarding.yml` narrows it: `switch-tenant`,
+which was **new** in that same deploy, answers on the runtime, while
+`complete-onboarding`, which was **updated**, does not reflect its update. So
+new functions land and updates to existing ones do not. The likeliest mechanism
+is that a warm worker is not recycled when a function is redeployed —
+`switch-tenant` had no warm worker and so loaded fresh — but that is a
+hypothesis; the observable fact is the new-vs-updated split.
+
+Two consequences worth stating plainly:
+
+1. **Do not trust `deployed (Ns)` as evidence a change is live.** Both functions
+   now return a `build` string with every successful response
+   (`2026-08-20.multitenant.1`) precisely so this is readable rather than
+   inferred. Read it before believing a deploy.
+2. **The `manage-member` fix may not be live either.** It is an existing
+   function updated in the same way, so the "removing a member does not
+   actually remove them" hole is probably still open in production despite the
+   CLI reporting success. Untested — `manage-member` needs a business_admin
+   caller and no token was available.
+
+If this persists, the workaround that follows from the evidence is to publish
+the changed logic under a *new* function name (new functions do deploy) and
+repoint the client — or to take it to Base44 support, for whom the repro is:
+source updated in repo and sandbox, CLI reports success, runtime returns a
+string present in neither.
+
 **Operational gotcha for that workflow: this app's outbound mail gets throttled.**
 After roughly ten sends in an hour, Base44 stops delivering both registration
 OTPs and password-reset links — the API still answers `HTTP 200` and claims the
