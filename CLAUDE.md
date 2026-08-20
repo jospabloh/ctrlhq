@@ -64,53 +64,45 @@ access is exactly the failure mode worth designing out.
   dropdown only when there is somewhere to switch to; switching reloads the
   page so nothing from the previous tenant survives on screen.
 
-**Verification status — NOT yet confirmed live.** The code is merged and
-`npm run lint`/`npm run build` pass, but the multi-tenant path has never been
-observed working against the app, so do not assume it does. The one run that
-got far enough (2026-08-19 22:58, five minutes after the functions deploy)
-showed the *old* behaviour on both counts that distinguish it: the second
-`complete-onboarding` was refused (the pre-multi-tenancy "you already belong to
-a business" guard) and no `Membership` row appeared, even though the caller was
-moved into the business. The deployed source in the sandbox *is* the new
-version, so the most likely reading is that the function deploy had not
-propagated yet rather than that the code is wrong — but that is a hypothesis,
-not a finding. Re-run `.github/workflows/verify-onboarding.yml` with
-`phase: multitenant` to settle it; it asserts the switch works AND that a
-non-member gets a 403.
+**Verification status — CONFIRMED live end-to-end** (2026-08-20 04:44, via
+`.github/workflows/verify-onboarding.yml` with `phase: multitenant`). One
+account created two businesses, was left in the second, switched back to the
+first, and `business_id` really moved each time. Memberships were written for
+both. The assertion that matters also holds: switching into a business the
+account has no `Membership` for is refused with `403 {"message":"No perteneces
+a ese negocio."}` **and** the refused switch does not move `business_id`. Both
+functions answered `"build":"2026-08-20.multitenant.1"`. `delete-account`
+cleaned up both tenants on the way out, exercising Module 7 as a side effect.
 
-**The blocker, and it is not in this repo: `functions deploy` reports success
-while the runtime keeps serving the previous build.** Confirmed across three
-deploys and roughly two hours. `complete-onboarding` kept rejecting a second
-business with the pre-multi-tenancy wording — a string that exists in neither
-this repo nor Base44's own sandbox copy of the app (both grepped). Six minutes
-after a deploy that printed `complete-onboarding deployed (1.5s)`, the runtime
-still produced it.
+**Getting there cost hours, and the cause was never in this repo: after a
+`functions deploy`, the runtime keeps serving the previous build until the
+function goes idle.** For roughly two hours and across three deploys,
+`complete-onboarding` kept rejecting a second business with the
+pre-multi-tenancy wording — a string present in neither this repo nor Base44's
+own sandbox copy (both grepped). Six minutes after a deploy that printed
+`complete-onboarding deployed (1.5s)`, the runtime still produced it. Left
+alone for about 90 minutes with no traffic, the same function then answered
+with the new build and everything passed on the first try.
 
-The `phase: probe` step in `verify-onboarding.yml` narrows it: `switch-tenant`,
-which was **new** in that same deploy, answers on the runtime, while
-`complete-onboarding`, which was **updated**, does not reflect its update. So
-new functions land and updates to existing ones do not. The likeliest mechanism
-is that a warm worker is not recycled when a function is redeployed —
-`switch-tenant` had no warm worker and so loaded fresh — but that is a
-hypothesis; the observable fact is the new-vs-updated split.
+The `phase: probe` step was what localized it: `switch-tenant`, **new** in that
+same deploy, answered on the runtime, while `complete-onboarding`, **updated**
+in it, did not reflect its update. A warm worker not being recycled on
+redeploy fits exactly — `switch-tenant` had no warm worker, so it loaded fresh
+— and the eventual recovery after idling confirms it.
 
-Two consequences worth stating plainly:
+What to do with this:
 
-1. **Do not trust `deployed (Ns)` as evidence a change is live.** Both functions
-   now return a `build` string with every successful response
-   (`2026-08-20.multitenant.1`) precisely so this is readable rather than
-   inferred. Read it before believing a deploy.
-2. **The `manage-member` fix may not be live either.** It is an existing
-   function updated in the same way, so the "removing a member does not
-   actually remove them" hole is probably still open in production despite the
-   CLI reporting success. Untested — `manage-member` needs a business_admin
-   caller and no token was available.
-
-If this persists, the workaround that follows from the evidence is to publish
-the changed logic under a *new* function name (new functions do deploy) and
-repoint the client — or to take it to Base44 support, for whom the repro is:
-source updated in repo and sandbox, CLI reports success, runtime returns a
-string present in neither.
+1. **Do not trust `deployed (Ns)` as evidence a change is live.** Both
+   functions return a `build` string with every successful response precisely
+   so this is readable rather than inferred. Read it before believing a
+   deploy, and bump `BUILD` on every meaningful change.
+2. **After deploying a change to an existing function, expect a delay.** If
+   the behaviour looks stale, leave it alone rather than redeploying in a
+   loop; give it time with no traffic and re-check the `build` string. Three
+   redeploys achieved nothing that waiting did not.
+3. If it ever fails to recover, the workaround the evidence supports is
+   publishing the changed logic under a *new* function name (new functions do
+   deploy immediately) and repointing the client.
 
 **Operational gotcha for that workflow: this app's outbound mail gets throttled.**
 After roughly ten sends in an hour, Base44 stops delivering both registration
@@ -527,25 +519,25 @@ app; `INGEST_HMAC_SECRET` is set to match Mission Control's value; both
 Mission Control migrations are applied to production.
 
 **Open follow-ups, in priority order:**
-1. The platform owner's own account (`h.josepablo@gmail.com`) is still
-   `role: admin` with no `business_id` — it was left that way by the failed
-   attempts, not by the bug, which is now fixed and verified. Onboarding
-   works, so creating a business from `/onboarding` in the browser will
-   complete normally and move that account to `business_admin`.
-2. Three orphaned `Business` rows are still there, left by the failed
-   onboarding attempts — `6a860fa4c538d19adbc17195` (was "Roseta
-   Cafeteria") and `6a8622701fd0abf41ff517c6` / `6a8625b144e9a1cad5777cba`
-   (both "Owner Sandbox"). They have been **neutralized**: `invite_code`
-   cleared so nobody can join one, `billing_status: suspended`, and renamed
-   to `[HUERFANO - BORRAR] ...` so they are obvious in any list. They still
-   need a real delete. Entity deletes are not reachable through the Base44
-   MCP tooling, and `delete-account` needs a caller who is either that
-   business's own `business_admin` (nobody is) or the platform admin — so
-   this is the platform owner's to run, from an authenticated session.
-   Everything the verification runs created has already been cleaned up:
-   all four "E2E Verification" businesses were purged through
-   `delete-account`, and the four `h.josepablo+ctrlhq-e2e-*` users are back
-   to `role: staff` with no `business_id`.
+1. Five orphaned `Business` rows need a real delete — all renamed
+   `[HUERFANO - BORRAR] ...` so they stand out. Three are from the original
+   onboarding incident (`6a860fa4c538d19adbc17195`, was "Roseta Cafeteria";
+   `6a8622701fd0abf41ff517c6` and `6a8625b144e9a1cad5777cba`, both "Owner
+   Sandbox"), one from a later retry (`6a862e618bfba0142cffd416`), and one
+   from a verification run that died before its own cleanup
+   (`6a866ba33e6e3c32a2ecb1bc`). All are **neutralized** — `invite_code`
+   cleared so nobody can join, `billing_status: suspended` — so this is
+   tidiness, not risk. Entity deletes are not reachable through the Base44 MCP
+   tooling, and `delete-account` needs a caller who is either that business's
+   own `business_admin` (nobody is) or the platform admin, so it is the
+   platform owner's to run from an authenticated session. Note
+   `6a8634fce74f65b1f11ea8b0` ("E2E Tenant A") still has
+   `h.josepablo+ctrlhq-e2e-5@gmail.com` attached and was never renamed —
+   delete it the same way.
+2. The `h.josepablo+ctrlhq-e2e-*` and `h.josepablo+ctrlhq-mt-*` test users
+   are still registered. Harmless (most are `role: staff` with no
+   `business_id`), but they clutter the user list; Base44 does not expose
+   user deletion through its MCP tooling either.
 3. Confirm the `acaciaControl` bridge actually round-trips
    (not just "deployed") — click "Sincronizar ahora" on this app's page in
    Mission Control, or wait for the next 08:00 UTC `api/cron/sync.js` run,
