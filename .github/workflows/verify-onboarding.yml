@@ -26,7 +26,7 @@ on:
         description: "register / onboard = the single-tenant path; multitenant = two businesses, switching, and the non-member refusal; reset-request/purge = retire a leftover test account"
         required: true
         type: choice
-        options: [register, onboard, reset-request, purge, multitenant]
+        options: [register, onboard, reset-request, purge, multitenant, probe]
       reset_token:
         description: "Token from the password-reset email (phase=purge only)"
         required: false
@@ -317,4 +317,23 @@ jobs:
               -d "$(jq -nc --arg b "$id" --arg n "$name" '{businessId:$b,confirmName:$n}')")
             echo "delete-account($name) -> HTTP $code"
             [ "$code" -lt 400 ] || echo "::warning::$name ($id) still needs removing by hand"
+          done
+
+      - name: Probe — which functions actually exist on the runtime
+        if: inputs.phase == 'probe'
+        run: |
+          set -euo pipefail
+          # Unauthenticated on purpose: no token, no email round-trip. Each
+          # function's own auth check answering (401/403) proves the function
+          # is reachable; 404 means the runtime has never heard of it.
+          #
+          # This exists to separate "the platform is not applying deploys" from
+          # "the code is wrong". switch-tenant is the sharp one: it is a NEW
+          # function, so if it answers, new functions deploy fine and only
+          # updates to existing ones are being ignored.
+          for fn in health complete-onboarding switch-tenant manage-member delete-account; do
+            code=$(curl -sS -o /tmp/p.json -w '%{http_code}' --max-time 30 \
+              -X POST "$API/apps/$APP_ID/functions/$fn" \
+              -H 'Content-Type: application/json' -d '{}' || echo "000")
+            printf '%-22s -> HTTP %s  %s\n' "$fn" "$code" "$(head -c 200 /tmp/p.json)"
           done
