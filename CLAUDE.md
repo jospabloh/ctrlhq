@@ -613,9 +613,10 @@ npm run deploy:entities   # schema — DESTRUCTIVO, pide escribir "CtrlHQ"
 npm run functions:audit   # quién llama a cada endpoint
 ```
 
-**Mergear a `main` no deploya el sitio.** Se creyó lo contrario durante meses,
-y en flowfin eso dejó un fix de frontend mergeado, verde en CI y **cinco días sin
-servir**, con el bug vivo en producción (detalle en el CLAUDE.md de flowfin). El
+**Mergear a `main` no deploya el sitio.** Se creyó lo contrario durante meses.
+En flowfin se comprobó al revés: un fix se mergeó a `main` y, horas después, el
+árbol que el app realmente servía seguía siendo el de antes del fix — mergear no
+propaga nada (detalle en el CLAUDE.md de flowfin). El
 frontend se deploya a mano con `npm run deploy:site`, igual que las funciones.
 Y comprueba el resultado por **contenido**, no por hashes: el checkpoint del app
 puede reportar un `git_commit_hash` igual al HEAD de `main` mientras el árbol que
