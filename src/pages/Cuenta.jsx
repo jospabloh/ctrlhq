@@ -34,6 +34,7 @@ export default function Cuenta() {
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [confirmName, setConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const canManageMembers = can("Cuenta:manage_members");
   const canDangerZone = can("Cuenta:danger_zone");
@@ -77,18 +78,40 @@ export default function Cuenta() {
     }
   };
 
-  const exportData = () => {
-    const blob = new Blob([JSON.stringify({ business, exported_at: new Date().toISOString() }, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ctrlhq-${business?.name || "negocio"}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  // Module 7's data export. The payload is built SERVER-side by
+  // export-business-data, not from what this page happens to have loaded:
+  // `business` alone is the tenant's profile, not its Ingresos/Egresos/
+  // Nómina/Consumos rows, which is what a business actually needs before
+  // deleting its account. The response still becomes a client-side download —
+  // no server-side file storage is involved.
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      const response = await base44.functions.invoke("export-business-data", {});
+      const payload = response?.data ?? {};
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.download = `ctrlhq-${business?.name || "negocio"}-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (payload.errors) {
+        toast({
+          title: "Exportación parcial",
+          description: 'Algunas secciones fallaron. Revisa "errors" en el archivo.',
+        });
+      } else {
+        toast({ title: "Datos exportados" });
+      }
+    } catch (e) {
+      toast({ title: e.message || "No se pudo exportar", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -144,9 +167,14 @@ export default function Cuenta() {
               </div>
             )}
           </div>
-          <Button variant="outline" onClick={exportData}>
-            <Download className="w-4 h-4 mr-2" /> Exportar datos del negocio
-          </Button>
+          {canDangerZone && (
+            <Button variant="outline" onClick={exportData} disabled={exporting}>
+              {exporting
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Download className="w-4 h-4 mr-2" />}
+              {exporting ? "Exportando…" : "Exportar datos del negocio"}
+            </Button>
+          )}
         </TabsContent>
 
         <TabsContent value="members">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { guardedCreate, guardedUpdate, guardedDelete } from "@/lib/guardedWrite";
 import { Plus, Pencil, Trash2, Utensils } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -100,9 +101,9 @@ export default function ConsumosEquipo() {
     try {
       const payload = { ...form, amount: Number(form.amount), business_id: user.business_id };
       if (editingId) {
-        await base44.entities.TeamConsumption.update(editingId, payload);
+        await guardedUpdate("TeamConsumption", editingId, payload);
       } else {
-        await base44.entities.TeamConsumption.create(payload);
+        await guardedCreate("TeamConsumption", payload);
       }
       toast({ title: editingId ? "Consumo actualizado" : "Consumo registrado" });
       setDialogOpen(false);
@@ -117,7 +118,7 @@ export default function ConsumosEquipo() {
   const handleDelete = async (id) => {
     if (!confirm("¿Eliminar este registro?")) return;
     try {
-      await base44.entities.TeamConsumption.delete(id);
+      await guardedDelete("TeamConsumption", id);
       toast({ title: "Registro eliminado" });
       loadData();
     } catch (e) {
@@ -173,9 +174,11 @@ export default function ConsumosEquipo() {
                   <TableCell className="text-right font-semibold whitespace-nowrap">{formatCurrency(r.amount)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-muted rounded-lg">
-                        <Pencil className="w-4 h-4" />
-                      </button>
+                      {can("ConsumosEquipo:create") && (
+                        <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-muted rounded-lg">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                       {can("ConsumosEquipo:delete") && (
                         <button onClick={() => handleDelete(r.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
                           <Trash2 className="w-4 h-4" />

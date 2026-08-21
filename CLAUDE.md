@@ -142,12 +142,37 @@ already known.
     (`manage-member`), and irreversible account deletion (`delete-account`).
     Each independently re-validates caller role + tenant match server-side —
     read each file's header comment before touching it.
-- billing_status gate: `view_only`/`suspended` block every write in
-  `PermissionContext.can()` (client) — there is currently no cross-entity RLS
-  check for this (Base44 RLS templates can't join to a different entity), so
-  a suspended tenant's writes are blocked by the UI, not by RLS. If that gap
-  ever matters (a client bypassing the UI), route the affected write through
-  a Safe function that checks `Business.billing_status` server-side.
+- **`base44/functions/guardedEntityWrite` (added 2026-08-21) closes the two
+  things RLS structurally cannot do.** It is now the sanctioned write path for
+  `Income`/`Expense`/`Payroll`/`TeamConsumption`, which the client used to
+  write directly with `base44.entities.X.create/update/delete()`:
+  - **Granular keys.** A `PermissionProfile` override (e.g. a
+    `business_admin` denying their staff `Ingresos:delete`) was UI-only —
+    RLS cannot join to that row, so a denied staff member could still
+    perform the write from devtools. It is now re-checked server-side, in
+    the same precedence order `PermissionContext.can()` uses.
+  - **The billing gate.** `Business.billing_status` lives on a different row,
+    and Base44 RLS templates can't join across entities — so a
+    `view_only`/`suspended` tenant's writes were blocked by the UI only.
+    `guardedEntityWrite` rejects them with `write_blocked` server-side.
+  `src/lib/guardedWrite.js` is the client wrapper
+  (`guardedCreate`/`guardedUpdate`/`guardedDelete`); the 12 migrated call
+  sites keep the same calling shape as the entity SDK they replace. The
+  function's `PERMISSION_DEFAULTS` is a hand-kept mirror of
+  `permissionRegistry.js` (Deno can't import from `src/`) — **`npm run
+  validate:permissions` fails the build on any drift** between the two, in
+  either direction, and is wired into `npm run lint`. Verified it is not a
+  no-op by flipping one default and confirming it fails.
+- The same pass also fixed a **client-side** hole this exposed: the pencil
+  (edit) button in Ingresos/Egresos/ConsumosEquipo/Nómina had no `can()`
+  gate at all — only delete did — so a staff member denied `Ingresos:create`
+  could still edit an existing row. Nómina's "Nuevo Registro" and delete
+  buttons were ungated too (the page as a whole was gated on `Nomina:view`,
+  which happens to be staff-false, so nothing leaked in practice; the keys
+  just were not enforced). All now gated on the same key the server checks.
+- `PermissionProfile` itself was checked and needs no Safe function: its RLS
+  already requires `business_admin` + a tenant match on create/update/delete,
+  so a staff member cannot grant themselves anything.
 
 ## RLS (Module 4)
 
@@ -484,10 +509,12 @@ session — see module sections above for detail and evidence):
       `messaging.js`/`Licenses.jsx`.
 - [x] Module 2 — Roles: `src/lib/rbac.js`. Mission Control's operator roles
       are a separate layer, never conflated.
-- [x] Module 3 — Granular permissions: `permissionRegistry.js` + RLS/Safe
-      functions server-side re-check, in the precedence documented above.
-      Tenant-admin override layer (`PermissionProfile` + `Permisos.jsx`) added
-      and deployed live, matching stockflow's `PermissionAdmin.jsx` pattern.
+- [x] Module 3 — Granular permissions: `permissionRegistry.js` + a real
+      server-side re-check of every key on every write path, in the precedence
+      documented above. Tenant-admin override layer (`PermissionProfile` +
+      `Permisos.jsx`), and since 2026-08-21 `guardedEntityWrite` actually
+      enforces those overrides and the billing gate server-side — before it,
+      both were UI-only (see the Permissions section above).
 - [x] Module 4 — RLS: four-op `$or` shape on every tenant entity, both path
       halves verified, deployed live and confirmed (via the Base44 MCP, then
       re-confirmed by `base44 entities push` from the platform owner's
@@ -497,7 +524,16 @@ session — see module sections above for detail and evidence):
 - [x] Module 5 — Health: `base44/functions/health` — deployed and live.
 - [x] Module 6 — Changelog: `appConfig.js` + `scripts/release.mjs`
       (`npm run release`).
-- [x] Module 7 — Account & danger zone: `Cuenta.jsx`.
+- [x] Module 7 — Account & danger zone: `Cuenta.jsx`. The export is a **real
+      data export** since 2026-08-21 — it was building the download from the
+      single `business` object already on screen (the tenant's profile, not
+      its Ingresos/Egresos/Nómina/Consumos rows). Now served by
+      `base44/functions/export-business-data`, which returns the `Business`
+      row plus every row of 12 business-scoped entities, each read explicitly
+      filtered by the caller's own `business_id` re-derived from `auth.me()`.
+      Read-only, so deliberately no billing gate: a suspended tenant getting
+      its data out is exactly what the export is for. `User` is excluded on
+      purpose (other members' PII).
 - [x] Module 8 — Support: `Soporte.jsx` + entities + `acaciaControl` bridge
       (deployed) + Mission Control's `ticketControl.js` `ctrlhq` entry — sync
       is wired end-to-end; not yet independently observed round-tripping a
@@ -517,6 +553,12 @@ resolves too). All 5 backend functions (including `acaciaControl`) and all 13
 entity schemas (with RLS) are deployed and confirmed against the live Base44
 app; `INGEST_HMAC_SECRET` is set to match Mission Control's value; both
 Mission Control migrations are applied to production.
+
+**Deploy note (2026-08-21):** `guardedEntityWrite` and
+`export-business-data` are **new** functions, so they deploy immediately —
+the warm-worker staleness described above only affects *updated* ones. Both
+return a `build` string; read it off a real response before believing the
+deploy. No entity schema changed in that pass.
 
 **Open follow-ups, in priority order:**
 1. Five orphaned `Business` rows need a real delete — all renamed
