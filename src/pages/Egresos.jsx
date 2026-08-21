@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { guardedCreate, guardedUpdate, guardedDelete } from "@/lib/guardedWrite";
 import { Plus, Pencil, Trash2, TrendingDown, Clock, CheckCircle2, XCircle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -119,9 +120,9 @@ export default function Egresos() {
         business_id: user.business_id,
       };
       if (editingId) {
-        await base44.entities.Expense.update(editingId, payload);
+        await guardedUpdate("Expense", editingId, payload);
       } else {
-        await base44.entities.Expense.create(payload);
+        await guardedCreate("Expense", payload);
       }
       toast({ title: editingId ? "Egreso actualizado" : "Egreso registrado" });
       setDialogOpen(false);
@@ -136,7 +137,7 @@ export default function Egresos() {
   const handleDelete = async (id) => {
     if (!confirm("¿Eliminar este registro?")) return;
     try {
-      await base44.entities.Expense.delete(id);
+      await guardedDelete("Expense", id);
       toast({ title: "Registro eliminado" });
       loadData();
     } catch (e) {
@@ -216,9 +217,11 @@ export default function Egresos() {
                     <TableCell className="text-right font-semibold text-rose-600 whitespace-nowrap">{formatCurrency(r.amount)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-muted rounded-lg">
-                          <Pencil className="w-4 h-4" />
-                        </button>
+                        {can("Egresos:create") && (
+                          <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-muted rounded-lg">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
                         {can("Egresos:delete") && (
                           <button onClick={() => handleDelete(r.id)} className="p-1.5 hover:bg-muted rounded-lg text-rose-600">
                             <Trash2 className="w-4 h-4" />
