@@ -6,14 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint . --quiet && npm run validate:rls && npm run validate:permissions",
+    "lint": "eslint . --quiet && npm run validate:rls && npm run validate:permissions && npm run validate:functions",
     "lint:fix": "eslint . --fix",
     "validate:rls": "node scripts/validate-rls.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "release": "node scripts/release.mjs",
     "preview": "vite preview",
     "test:smoke": "playwright test",
-    "validate:permissions": "node scripts/validate-permissions.mjs"
+    "validate:permissions": "node scripts/validate-permissions.mjs",
+    "deploy": "node scripts/base44-deploy.mjs",
+    "deploy:entities": "node scripts/base44-deploy.mjs --entities",
+    "functions:audit": "node scripts/base44-audit.mjs",
+    "validate:functions": "node scripts/validate-functions.mjs"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.43",

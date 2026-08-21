@@ -594,3 +594,39 @@ deploy. No entity schema changed in that pass.
 5. The `npm run typecheck` gap is portfolio-wide (confirmed against stockflow,
    see Build/verify above) — not a ctrlhq-specific follow-up, but worth fixing
    across the portfolio's shadcn/ui components someday.
+
+## Deploy: el id de la app vive en el repo (módulo 11, 2026-08-21)
+
+El 2026-08-21, un `git pull` fallido dejó la terminal parada en `flowfin` y los
+seis comandos siguientes desplegaron **el backend de FlowFin** en puntos, radar,
+stockflow y ctrlhq: la CLI toma el origen del **directorio actual** y el destino
+de `--app-id`, y nada comprueba que coincidan. En radar el `entities push` llegó
+a completarse y borró el modelo de datos entero. Detalle en
+`jospabloh/acacia-app-standard` → `docs/incidents.md`.
+
+Por eso este repo ya no se deploya a mano:
+
+```bash
+npm run deploy            # funciones — lee el appId de base44.app.json
+npm run deploy:entities   # schema — DESTRUCTIVO, pide escribir "CtrlHQ"
+npm run functions:audit   # quién llama a cada endpoint
+```
+
+`scripts/base44-deploy.mjs` **rechaza** un `--app-id` por argumento, así que el
+directorio y la app destino no pueden desalinearse. `deploy:entities` imprime la
+lista de entidades y el nombre de la app antes de pedir confirmación — ver
+"36 entidades de FlowFin" mientras crees estar desplegando otra app es la señal
+de alto que faltaba.
+
+`npm run validate:functions` (dentro de `npm run lint`) falla si los endpoints
+pasan de `maxFunctions` en `base44.app.json` — hoy **40**, con
+Base44 cortando en 50. El margen importa: por encima del tope el deploy falla a
+media aplicación y la CLI **no** llega a su fase de poda, así que las funciones
+viejas siguen ocupando los slots que harían falta para arreglarlo.
+
+**Antes de consolidar o borrar cualquier función, corre `npm run functions:audit`.**
+Una función sin llamadores en el repo casi nunca está muerta: el llamador vive
+fuera, donde grep no ve — un entity hook de Base44, un cron del panel, un
+`tool_config` de un agente, la URL de un webhook. El audit marca esas como
+`REVISAR EN PANEL` en vez de adivinar; confírmalas contra
+`npx base44 functions list` (anota `(N automation)`) antes de tocarlas.
