@@ -15,6 +15,7 @@
     "test:smoke": "playwright test",
     "validate:permissions": "node scripts/validate-permissions.mjs",
     "deploy": "node scripts/base44-deploy.mjs",
+    "deploy:site": "node scripts/base44-deploy.mjs --site",
     "deploy:entities": "node scripts/base44-deploy.mjs --entities",
     "functions:audit": "node scripts/base44-audit.mjs",
     "validate:functions": "node scripts/validate-functions.mjs"

@@ -608,9 +608,19 @@ Por eso este repo ya no se deploya a mano:
 
 ```bash
 npm run deploy            # funciones — lee el appId de base44.app.json
+npm run deploy:site       # frontend — mergear a main NO lo hace por ti
 npm run deploy:entities   # schema — DESTRUCTIVO, pide escribir "CtrlHQ"
 npm run functions:audit   # quién llama a cada endpoint
 ```
+
+**Mergear a `main` no deploya el sitio.** Se creyó lo contrario durante meses.
+En flowfin se comprobó al revés: un fix se mergeó a `main` y, horas después, el
+árbol que el app realmente servía seguía siendo el de antes del fix — mergear no
+propaga nada (detalle en el CLAUDE.md de flowfin). El
+frontend se deploya a mano con `npm run deploy:site`, igual que las funciones.
+Y comprueba el resultado por **contenido**, no por hashes: el checkpoint del app
+puede reportar un `git_commit_hash` igual al HEAD de `main` mientras el árbol que
+de verdad se sirve está atrasado.
 
 `scripts/base44-deploy.mjs` **rechaza** un `--app-id` por argumento, así que el
 directorio y la app destino no pueden desalinearse. `deploy:entities` imprime la
