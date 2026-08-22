@@ -41,7 +41,7 @@ const formatDate = (d) => (d ? new Date(d).toLocaleDateString("es-MX") : "");
 const statusConfig = {
   pendiente: { label: "Pendiente", icon: Clock, color: "text-amber-600", bg: "bg-amber-100" },
   recibida: { label: "Recibida", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-100" },
-  no_requerida: { label: "No requerida", icon: XCircle, color: "text-slate-500", bg: "bg-slate-100" },
+  no_requerida: { label: "No requerida", icon: XCircle, color: "text-muted-foreground", bg: "bg-muted" },
 };
 
 const emptyForm = {

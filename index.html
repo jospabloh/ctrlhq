@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es-MX">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -11,6 +11,21 @@
     <title>CtrlHQ</title>
   </head>
   <body>
+    <script>
+      /* Paint the stored theme before React mounts, so the first frame is
+         already the right one instead of flashing light and correcting itself.
+         Mirrors the next-themes contract in src/App.jsx: same storage key,
+         same 'light' | 'dark' | 'system' values, same `class` attribute. Change
+         one and change the other. */
+      (function () {
+        try {
+          var pref = localStorage.getItem('theme') || 'system';
+          var dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) { /* private mode, or no matchMedia — fall through to light */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

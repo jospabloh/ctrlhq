@@ -640,3 +640,37 @@ fuera, donde grep no ve — un entity hook de Base44, un cron del panel, un
 `tool_config` de un agente, la URL de un webhook. El audit marca esas como
 `REVISAR EN PANEL` en vez de adivinar; confírmalas contra
 `npx base44 functions list` (anota `(N automation)`) antes de tocarlas.
+
+## Selector de tema: claro / oscuro / dispositivo (módulo 12, 2026-08-21)
+
+El tema se elige desde **un solo control**: un círculo pequeño anclado a una
+esquina de la pantalla que muestra el modo vigente y, al pulsarlo, crece de lado
+en una pista de tres ranuras (Claro · Oscuro · Sistema) con un indicador que se
+desliza a la elegida. Tres estados, tres posiciones físicas — que es justo lo
+que un botón sol/luna de dos estados no puede expresar en cuanto "seguir al
+dispositivo" entra en la lista.
+
+Lo que se guarda es la **preferencia** (`light` | `dark` | `system`), nunca el
+color resuelto: con `system` la app sigue a `prefers-color-scheme` en vivo, sin
+recargar. `index.html` trae un script pre-montaje que resuelve y aplica el tema
+antes de que monte React, así que el primer frame ya sale del color correcto;
+ese script y el proveedor comparten clave y valores, y cada uno lleva un
+comentario apuntando al otro.
+
+`src/components/ThemeSwitcher.jsx` es **idéntico byte a byte en todas las apps
+del portafolio**. La fuente canónica vive en `jospabloh/acacia-app-standard` →
+`shared/theme/`: cámbialo allí y cópialo, no lo edites aquí. Lo único propio de
+esta app es `src/lib/useThemeMode.js` (de dónde sale el estado) y las variables
+`--theme-switcher-bottom/right` en `src/index.css` (dónde se coloca).
+
+**Aquí el tema oscuro no existía en la práctica.** `tailwind.config.js` tenía
+`darkMode: ["class"]` y `src/index.css` una paleta `.dark` completa, pero nada
+montaba un proveedor ni ponía la clase: era código muerto desde el scaffold. Se
+montó `ThemeProvider` (next-themes, `defaultTheme="system"`) en `App.jsx`, se
+añadió el script pre-montaje y el selector de esquina.
+
+De paso se convirtieron a tokens semánticos los 19 colores claros hardcodeados
+que quedaban del scaffold (`PageNotFound`, `UserNotRegisteredError`, los
+spinners, dos chips de estado) — con el tema oscuro apagado nunca se habían
+notado, y con él encendido se veían como parches blancos. Y `index.html`
+declaraba `lang="en"` en una app entera en español; ahora dice `es-MX`.

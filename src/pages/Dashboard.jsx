@@ -128,7 +128,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -194,7 +194,7 @@ export default function Dashboard() {
           <div className="space-y-3">
             <InvoiceStatusRow icon={Clock} label="Pendientes" amount={invoiceBreakdown.pendiente} total={totalExpenses} color="text-amber-600" bg="bg-amber-100" />
             <InvoiceStatusRow icon={CheckCircle2} label="Recibidas" amount={invoiceBreakdown.recibida} total={totalExpenses} color="text-emerald-600" bg="bg-emerald-100" />
-            <InvoiceStatusRow icon={XCircle} label="No requeridas" amount={invoiceBreakdown.no_requerida} total={totalExpenses} color="text-slate-500" bg="bg-slate-100" />
+            <InvoiceStatusRow icon={XCircle} label="No requeridas" amount={invoiceBreakdown.no_requerida} total={totalExpenses} color="text-muted-foreground" bg="bg-muted" />
           </div>
           <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
