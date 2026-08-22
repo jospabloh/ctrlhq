@@ -46,6 +46,17 @@ const SLOT = '[role="radio"]';
 const DARK_SLOT = 1;
 const LIGHT_SLOT = 0;
 
+// The switcher is pinned to a corner, above everything, on every screen — which
+// is exactly the shape of thing that ends up sitting on top of a mobile tab bar
+// or a floating action button. Each app places it with
+// --theme-switcher-bottom/right and lifts it over its own bottom chrome; this is
+// what proves the app actually did, at the sizes people use.
+const VIEWPORTS = [
+  { name: 'móvil', width: 390, height: 844 },
+  { name: 'tablet', width: 834, height: 1112 },
+  { name: 'escritorio', width: 1440, height: 900 },
+];
+
 /** Clears whatever one-time overlay the site shows a first-time visitor. */
 async function dismissOverlay(page) {
   if (!config.dismissOverlay) return;
@@ -64,6 +75,48 @@ function readTheme(page) {
     colorScheme: document.documentElement.style.colorScheme,
     appClass: document.querySelector('.app')?.className || '',
   }));
+}
+
+/**
+ * Runs in the page. Answers two questions about the corner switcher at the
+ * current viewport: can it be reached, and is it stealing anyone's clicks.
+ *
+ * Both are decided with elementFromPoint rather than by comparing rectangles,
+ * because overlap on its own is not a fault — a control clipped at one corner
+ * by a rounded bubble is still perfectly usable. What matters is whether the
+ * point a person actually aims at belongs to the thing they meant to press.
+ */
+function inspectCorner(rootSel) {
+  const root = document.querySelector(rootSel);
+  if (!root) return { missing: true };
+
+  const box = root.getBoundingClientRect();
+  const mid = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+  const onScreen = ([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+
+  // Nothing may be painted over the switcher itself.
+  const [cx, cy] = mid(box);
+  const atCentre = document.elementFromPoint(cx, cy);
+  const covered = !atCentre || !root.contains(atCentre);
+
+  // …and the switcher may not be what answers for someone else's control.
+  const SEL = 'a[href], button, input, select, textarea, summary, [role="button"], [role="radio"], [role="tab"], [role="switch"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+  const stolen = [];
+  for (const el of document.querySelectorAll(SEL)) {
+    if (root.contains(el) || el.disabled) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const st = getComputedStyle(el);
+    if (st.visibility === 'hidden' || st.display === 'none' || st.pointerEvents === 'none') continue;
+    if (parseFloat(st.opacity) === 0) continue;
+    const point = mid(r);
+    if (!onScreen(point)) continue;
+    const hit = document.elementFromPoint(point[0], point[1]);
+    if (!hit || !root.contains(hit)) continue;
+    const name = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    stolen.push(`<${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(/\s+/)[0] : ''}> ${name || '(sin texto)'}`);
+  }
+  return { covered, stolen };
 }
 
 function isDark(state) {
@@ -139,6 +192,36 @@ test.describe(`${config.name} · smoke`, () => {
 
       await page.reload({ waitUntil: 'networkidle' });
       expect(isDark(await readTheme(page)), 'the preference must outlive the page').toBe(true);
+    });
+
+    test('the switcher covers nothing, at every size', async ({ page }) => {
+      // A corner control that sits on top of a mobile tab bar, a floating
+      // action button or a sticky "Guardar" is not a small cosmetic problem —
+      // it is a function of the app the operator can no longer reach, and it
+      // only shows up at the one width nobody opened. Checked collapsed and
+      // expanded, since the track is at its widest once open.
+      for (const vp of VIEWPORTS) {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(HOME, { waitUntil: 'networkidle' });
+        await dismissOverlay(page);
+
+        const root = page.locator(config.theme.root);
+        await expect(root, `the switcher belongs on ${vp.name} too`).toBeVisible();
+
+        for (const state of ['plegado', 'desplegado']) {
+          if (state === 'desplegado') {
+            await root.locator(BUBBLE).click();
+            await page.waitForTimeout(450); // the track finishes growing
+          }
+          const seen = await page.evaluate(inspectCorner, config.theme.root);
+          expect(seen.missing, `the switcher is not in the DOM on ${vp.name}`).toBeFalsy();
+          expect(seen.covered, `something is painted over the switcher on ${vp.name} (${state})`).toBe(false);
+          expect(
+            seen.stolen,
+            `the switcher is taking the clicks meant for these, on ${vp.name} (${state})`
+          ).toEqual([]);
+        }
+      }
     });
   });
 
