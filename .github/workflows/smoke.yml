@@ -1,11 +1,13 @@
 name: Production smoke test
 
-# Live-site check (see tests/e2e/smoke.spec.js's header comment for why this
-# runs here and not from any local/AI dev sandbox: those environments proxy
-# outbound HTTPS to an allowlist that doesn't include the production domain).
-# Manual so it can be run on demand right after a `base44 site deploy`
-# instead of waiting for the next scheduled tick; the daily cron is the
-# backstop that catches a regression nobody thought to trigger this for.
+# Live-site check. It runs here rather than in the push/PR job because the
+# development sandboxes this portfolio is built from proxy outbound HTTPS to an
+# allowlist that excludes these domains — GitHub Actions is the only place that
+# can actually reach the deployed app.
+#
+# Manual so it can be run on demand right after a deploy, instead of waiting for
+# the next tick; the daily cron is the backstop that catches the regression
+# nobody thought to trigger it for.
 on:
   workflow_dispatch:
     inputs:
