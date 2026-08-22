@@ -704,3 +704,35 @@ dispararla a mano justo después de un deploy, y un cron diario como red.
 
     npm run test:smoke                      # contra producción
     SMOKE_URL=https://… npm run test:smoke  # contra un preview
+
+Desde el 2026-08-22 la suite añade una quinta afirmación, del **módulo 12**: el
+selector no tapa nada y nada lo tapa, en móvil (390), tablet (834) y escritorio
+(1440), plegado y desplegado. Un control anclado por encima de todo en una
+esquina es justo lo que acaba sentado sobre una barra inferior o un botón
+flotante, y entonces la app pierde una función al ancho que nadie abrió. La
+comprobación distingue las dos direcciones — algo pintado encima del selector, y
+el selector respondiendo por un control que hay debajo — y nombra el control
+afectado. Se coloca con `--theme-switcher-bottom/right`; si otra cosa ya es dueña
+de esa esquina, se mueve el selector, no el control.
+
+## Módulo 14 — auditoría de aislamiento multi-tenant (2026-08-22)
+
+Nuevo en `jospabloh/acacia-app-standard`. **No es releer las reglas de RLS** (eso
+es el módulo 4): es recorrer, con fecha y por escrito, todo lo que puede cruzar
+un inquilino con otro — cada entidad, cada función de backend (el inquilino se
+re-deriva en el servidor, nunca del cuerpo de la petición, y en update/delete se
+comprueba contra el registro **almacenado**), cada campo bloqueado, cada
+exportación/reporte/búsqueda, cada destinatario de correo o webhook, y el cambio
+de inquilino. Contra el **esquema desplegado**, no contra el archivo del repo.
+
+Se repite cuando se añade una entidad, una función o un rol. El resultado se
+anota aquí, incluyendo **lo que no se pudo verificar** desde el entorno de
+trabajo — normalmente una sesión autenticada como usuario restringido de un
+segundo inquilino. Decirlo vale más que insinuar una cobertura que no se logró.
+
+Lo que motiva el módulo es que todos los fallos de aislamiento que este
+portafolio llegó a desplegar eran **sintácticamente válidos**: la rama de rol sin
+`$and` al inquilino en `Parish` de cateqhub, las 84 instancias de liuma donde el
+motor descartaba la cláusula hermana de `user_condition`, los campos de licencia
+escribibles por el propio inquilino en puntos y rumbo, y el `PermissionProfile`
+que ningún RLS puede consultar porque vive en otra fila.
