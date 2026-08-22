@@ -42,7 +42,10 @@ test.describe("CtrlHQ production smoke test", () => {
     // Form column + brand panel, side by side (stockflow/rumbo pattern —
     // see AuthLayout.jsx's header comment). A regression back to the old
     // single centered card would collapse this to one column.
-    const brandPanel = page.getByText("Gestión financiera");
+    // Exact: the footer also reads "CtrlHQ · Gestión financiera", and a
+    // substring match resolves to both and fails on strict mode. Only the
+    // pill in the brand column is the thing being located here.
+    const brandPanel = page.getByText("Gestión financiera", { exact: true });
     await expect(brandPanel).toBeVisible();
     const box = await brandPanel.boundingBox();
     const viewport = page.viewportSize();

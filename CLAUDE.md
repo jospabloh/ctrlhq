@@ -476,7 +476,7 @@ CLI directly for anything auth-gated).
   JSDoc prop typings to every vendored shadcn component, portfolio-wide, not
   a ctrlhq change — out of scope here. `.github/workflows/ci.yml` documents
   this with an inline comment.
-- `npm run test:smoke` — `tests/e2e/smoke.spec.js` (Playwright), checks the
+- `npm run test:smoke` — `tests/smoke/` (Playwright), checks the
   **deployed production site**, not the local build: anonymous visitors land
   on `/login` (never the tenant dashboard — the exact regression this app
   shipped once, see the Login/Register/… entry above), the login page keeps
@@ -493,6 +493,9 @@ CLI directly for anything auth-gated).
   backstop. This is the answer to "you should be able to verify the live
   site yourself" — the dev sandbox structurally can't reach it, so the check
   runs somewhere that can, and its result is readable via the GitHub API.
+  Since 2026-08-22 the auth-gate tests live in `tests/smoke/auth.spec.js`
+  alongside the portfolio's shared `smoke.spec.js` — see the section at the
+  end of this file.
 
 ## ACACIA Portfolio Standard
 
@@ -674,3 +677,30 @@ que quedaban del scaffold (`PageNotFound`, `UserNotRegisteredError`, los
 spinners, dos chips de estado) — con el tema oscuro apagado nunca se habían
 notado, y con él encendido se veían como parches blancos. Y `index.html`
 declaraba `lang="en"` en una app entera en español; ahora dice `es-MX`.
+
+## `npm run test:smoke` — comprueba el sitio DESPLEGADO (2026-08-22)
+
+`tests/smoke/smoke.spec.js` es la suite compartida del portafolio, idéntica byte
+a byte en todos los repos; la fuente canónica está en
+`jospabloh/acacia-app-standard` → `shared/smoke/`. Lo propio de esta app vive en
+`tests/smoke/smoke.config.js` (URL, `<title>`, cómo representa el tema).
+
+**No comprueba el build local: comprueba lo que se sirve.** Es la automatización
+de la regla que cada CLAUDE.md repite — mergear no deploya nada, y hay que
+verificar por contenido y no por hash. Afirma cuatro cosas, todas derivadas de
+lo que el propio repo produce (nunca de copy adivinado, que se rompe al cambiar
+una palabra y enseña a ignorar la suite):
+
+1. responde 200 y el `<title>` es el de esta app — no un deploy viejo ni otro;
+2. no lanza excepciones al pintar;
+3. el tema llega resuelto desde el primer frame (el script pre-montaje viajó);
+4. el selector de esquina está montado, cambia el tema y la preferencia
+   sobrevive a un reload.
+
+**No corre en el pipeline normal ni desde un sandbox de desarrollo**: la salida
+HTTPS ahí va por un proxy con allowlist que no incluye estos dominios. Corre en
+GitHub Actions (`.github/workflows/smoke.yml`): `workflow_dispatch` para
+dispararla a mano justo después de un deploy, y un cron diario como red.
+
+    npm run test:smoke                      # contra producción
+    SMOKE_URL=https://… npm run test:smoke  # contra un preview
