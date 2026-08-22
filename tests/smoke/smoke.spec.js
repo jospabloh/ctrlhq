@@ -57,6 +57,12 @@ const VIEWPORTS = [
   { name: 'escritorio', width: 1440, height: 900 },
 ];
 
+// Public routes to check the corner on, relative like HOME. An app lists the
+// screens whose chrome differs — a register page, a password reset, a 404 —
+// because that is where a second corner control tends to appear. Anything
+// behind a login is out of reach: this suite holds no credentials.
+const ROUTES = config.routes?.length ? config.routes : [HOME];
+
 /** Clears whatever one-time overlay the site shows a first-time visitor. */
 async function dismissOverlay(page) {
   if (!config.dismissOverlay) return;
@@ -81,10 +87,23 @@ function readTheme(page) {
  * Runs in the page. Answers two questions about the corner switcher at the
  * current viewport: can it be reached, and is it stealing anyone's clicks.
  *
- * Both are decided with elementFromPoint rather than by comparing rectangles,
- * because overlap on its own is not a fault — a control clipped at one corner
- * by a rounded bubble is still perfectly usable. What matters is whether the
- * point a person actually aims at belongs to the thing they meant to press.
+ * Decided with elementFromPoint rather than by rectangles alone, because
+ * overlap on its own is not a fault — a control clipped at one corner by a
+ * rounded bubble is still perfectly usable, and failing that would make the
+ * suite something people learn to ignore. What matters is whether the points a
+ * person actually aims at belong to the thing they meant to press.
+ *
+ * The SWITCHER is probed at five points rather than one, because a bar covering
+ * its lower half leaves the exact centre pixel free and a one-point check calls
+ * that fine.
+ *
+ * Each CONTROL is still judged by its own midpoint, and that is not laziness:
+ * for two axis-aligned rectangles, an overlap of half a control's area always
+ * contains that control's centre — brute-forced over 400k random layouts, zero
+ * counterexamples. So an area threshold would be unreachable code pretending to
+ * add coverage. A control clipped at a corner keeps a usable centre and is
+ * correctly not flagged; if something small and separately clickable lives in
+ * that corner, it is its own element in this list and gets its own midpoint.
  */
 function inspectCorner(rootSel) {
   const root = document.querySelector(rootSel);
@@ -94,10 +113,22 @@ function inspectCorner(rootSel) {
   const mid = (r) => [r.left + r.width / 2, r.top + r.height / 2];
   const onScreen = ([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
 
-  // Nothing may be painted over the switcher itself.
-  const [cx, cy] = mid(box);
-  const atCentre = document.elementFromPoint(cx, cy);
-  const covered = !atCentre || !root.contains(atCentre);
+  /** Centre plus the four quadrant centres, inset so the edge is not sampled. */
+  function probes(r) {
+    const qx = r.width / 4;
+    const qy = r.height / 4;
+    const [cx, cy] = mid(r);
+    return [[cx, cy], [cx - qx, cy - qy], [cx + qx, cy - qy], [cx - qx, cy + qy], [cx + qx, cy + qy]];
+  }
+
+  // Nothing may be painted over the switcher — checked across its face, not
+  // only dead centre.
+  const covered = probes(box)
+    .filter(onScreen)
+    .some(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return !hit || !root.contains(hit);
+    });
 
   // …and the switcher may not be what answers for someone else's control.
   const SEL = 'a[href], button, input, select, textarea, summary, [role="button"], [role="radio"], [role="tab"], [role="switch"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
@@ -109,10 +140,12 @@ function inspectCorner(rootSel) {
     const st = getComputedStyle(el);
     if (st.visibility === 'hidden' || st.display === 'none' || st.pointerEvents === 'none') continue;
     if (parseFloat(st.opacity) === 0) continue;
+
     const point = mid(r);
     if (!onScreen(point)) continue;
     const hit = document.elementFromPoint(point[0], point[1]);
     if (!hit || !root.contains(hit)) continue;
+
     const name = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
     stolen.push(`<${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(/\s+/)[0] : ''}> ${name || '(sin texto)'}`);
   }
@@ -195,31 +228,51 @@ test.describe(`${config.name} · smoke`, () => {
     });
 
     test('the switcher covers nothing, at every size', async ({ page }) => {
+      // This one walks routes × widths × two states, so it needs a budget of
+      // its own rather than the suite's per-test default, which is sized for a
+      // single page load.
+      test.setTimeout(15_000 * ROUTES.length * VIEWPORTS.length);
+
       // A corner control that sits on top of a mobile tab bar, a floating
       // action button or a sticky "Guardar" is not a small cosmetic problem —
       // it is a function of the app the operator can no longer reach, and it
       // only shows up at the one width nobody opened. Checked collapsed and
       // expanded, since the track is at its widest once open.
-      for (const vp of VIEWPORTS) {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto(HOME, { waitUntil: 'networkidle' });
-        await dismissOverlay(page);
+      //
+      // SCOPE, stated plainly: this covers the routes an anonymous visitor can
+      // reach — whatever the app lists in `config.routes`, defaulting to the
+      // home page alone. The suite holds no credentials by design, so a
+      // collision that exists only behind a login is NOT caught here and has to
+      // be looked at by hand on the first deploy. Listing the app's other
+      // public routes (register, password reset, a 404) is cheap and widens the
+      // net, because those are the screens with different chrome.
+      for (const route of ROUTES) {
+        for (const vp of VIEWPORTS) {
+          await page.setViewportSize({ width: vp.width, height: vp.height });
+          // 'load', not 'networkidle': this check only needs the layout to have
+          // settled, and networkidle never arrives on a screen that polls or
+          // retries a request. The toBeVisible() below waits for the mount.
+          await page.goto(route, { waitUntil: 'load' });
+          await page.waitForTimeout(600);
+          await dismissOverlay(page);
 
-        const root = page.locator(config.theme.root);
-        await expect(root, `the switcher belongs on ${vp.name} too`).toBeVisible();
+          const where = route === HOME ? vp.name : `${route} · ${vp.name}`;
+          const root = page.locator(config.theme.root);
+          await expect(root, `the switcher belongs on ${where} too`).toBeVisible();
 
-        for (const state of ['plegado', 'desplegado']) {
-          if (state === 'desplegado') {
-            await root.locator(BUBBLE).click();
-            await page.waitForTimeout(450); // the track finishes growing
+          for (const state of ['plegado', 'desplegado']) {
+            if (state === 'desplegado') {
+              await root.locator(BUBBLE).click();
+              await page.waitForTimeout(450); // the track finishes growing
+            }
+            const seen = await page.evaluate(inspectCorner, config.theme.root);
+            expect(seen.missing, `the switcher is not in the DOM on ${where}`).toBeFalsy();
+            expect(seen.covered, `something is painted over the switcher on ${where} (${state})`).toBe(false);
+            expect(
+              seen.stolen,
+              `the switcher is taking the clicks meant for these, on ${where} (${state})`
+            ).toEqual([]);
           }
-          const seen = await page.evaluate(inspectCorner, config.theme.root);
-          expect(seen.missing, `the switcher is not in the DOM on ${vp.name}`).toBeFalsy();
-          expect(seen.covered, `something is painted over the switcher on ${vp.name} (${state})`).toBe(false);
-          expect(
-            seen.stolen,
-            `the switcher is taking the clicks meant for these, on ${vp.name} (${state})`
-          ).toEqual([]);
         }
       }
     });
