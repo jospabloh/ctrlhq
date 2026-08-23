@@ -7,6 +7,7 @@
 // role. Single channel for reads (license sync, usage) and writes (Fase 6).
 // Same file deploys to every app.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { verifyAs } from './_acaciaSign.ts';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
 const COUNT_CAP = 5000; // Base44 caps list at 5,000 — usage counts are capped here.
@@ -53,8 +54,14 @@ Deno.serve(async (req) => {
     if (!action || !ts || !sig) return Response.json({ error: 'missing action/ts/sig' }, { status: 400 });
     if (Math.abs(Date.now() - Number(ts)) > MAX_SKEW_MS) return Response.json({ error: 'stale request' }, { status: 401 });
 
-    const expected = await hmacHex(secret, `${ts}.${action}.${stableStringify(params)}`);
-    if (!timingSafeEqual(expected, String(sig))) return Response.json({ error: 'bad signature' }, { status: 401 });
+    // Verified against THIS app's derived key — see _acaciaSign.ts, and Module
+    // 15 of jospabloh/acacia-app-standard. While ACCEPT_LEGACY_MASTER is true a
+    // signature made with the bare INGEST_HMAC_SECRET is still accepted, which
+    // is what lets Mission Control and the nine apps deploy in any order.
+    const slug = Deno.env.get('ACACIA_APP_SLUG') ?? '';
+    if (!(await verifyAs(secret, slug, { ts, action, params, sig }))) {
+      return Response.json({ error: 'bad signature' }, { status: 401 });
+    }
 
     const base44 = createClientFromRequest(req);
     const sr = base44.asServiceRole;
