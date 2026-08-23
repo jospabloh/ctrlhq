@@ -50,7 +50,20 @@ export default function Soporte() {
     }
     setSaving(true);
     try {
-      await base44.entities.SupportTicket.create({ ...form, business_id: user.business_id });
+      const ticket = await base44.entities.SupportTicket.create({ ...form, business_id: user.business_id });
+      // Aviso en tiempo real a ACACIA Mission Control (no bloquea la UI). Sin
+      // esto el ticket sólo se veía en el siguiente sync diario de las 08:00
+      // UTC, así que un cliente que escribía a las 09:00 esperaba 23 horas a
+      // que soporte se enterara. CtrlHQ no hospeda una función propia para
+      // esto: Mission Control recibe sólo {app, ticketId} y lee el ticket real
+      // por el puente acaciaControl antes de confiar en el aviso, así que un
+      // cuerpo falsificado no puede inyectar nada y aquí no viaja ningún
+      // secreto. Mismo camino que cateqhub, flowfin y stockflow.
+      fetch("https://control.acaciaco.com.mx/api/ingest/ticket-pull", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ app: "ctrlhq", ticketId: ticket.id }),
+      }).catch(() => {});
       toast({ title: "Enviado. Te responderemos pronto." });
       setForm(emptyForm);
       loadTickets();

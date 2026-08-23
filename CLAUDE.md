@@ -850,3 +850,34 @@ llevaba su propio `stableStringify` / `hmacHex` / `timingSafeEqual`, copiados a
 mano contra `api/_lib/ingestSign.js` de Mission Control. Dejarlos al lado del
 helper no es desorden: es una segunda implementación de la misma rutina en el
 mismo archivo, que es exactamente la deriva que este módulo quita.
+
+## Soporte en tiempo real: el sync diario no es la entrega (2026-08-23)
+
+CtrlHQ escribía el `SupportTicket` y no avisaba a nadie. El ticket sólo
+aparecía en Mission Control en el siguiente `api/cron/sync`, que corre **una
+vez al día a las 08:00 UTC** — así que quien escribía a las 09:00 esperaba
+veintitrés horas a que soporte se enterara. El módulo 8 estaba marcado como
+cumplido porque el ticket sí llegaba; llegaba tarde, que para soporte es otra
+cosa.
+
+De las nueve apps del portafolio, **ésta y kitchops eran las dos únicas sin
+aviso**: cuatro firman y empujan el registro (puntos, liuma y radar con una
+función `notifyTicketCreated`; rumbo dentro de su `submitTicket`), y tres ya
+pingaban a Mission Control (cateqhub, flowfin, stockflow).
+
+`Soporte.jsx` ahora hace un `fetch` a
+`https://control.acaciaco.com.mx/api/ingest/ticket-pull` con `{app, ticketId}`,
+sin bloquear la UI y con `.catch(() => {})`: un aviso que falla nunca puede
+costarle el ticket al cliente.
+
+**Por qué el camino `ticket-pull` y no una función propia que firme.** El
+cuerpo de esa petición no se cree: Mission Control toma sólo el id y **relee el
+ticket auténtico por el puente `acaciaControl`** antes de escribir nada, así
+que un cuerpo falsificado no inyecta un ticket y un id inventado no hace nada.
+Eso permite llamarlo desde el navegador sin que viaje ningún secreto, y sin
+gastar uno de los 50 slots de función que Base44 concede por app.
+
+**Falta cablear todo punto donde nazca un ticket, no sólo la página de
+soporte.** Aquí sólo hay uno; en otras apps del portafolio la solicitud de baja
+de la zona de peligro (módulo 7) también crea un ticket y es la que nadie se
+acuerda de conectar.
