@@ -7,41 +7,16 @@
 // role. Single channel for reads (license sync, usage) and writes (Fase 6).
 // Same file deploys to every app.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { verifyAs } from './_acaciaSign.ts';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
 const COUNT_CAP = 5000; // Base44 caps list at 5,000 — usage counts are capped here.
 
-// Stable JSON: keys sorted recursively, so MC and this function sign the exact
-// same string (must mirror api/_lib/ingestSign.js in Mission Control).
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
-}
-
-async function hmacHex(secret: string, msg: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-  );
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Comparación en tiempo constante SIN corto-circuito por longitud: la diferencia
-// de longitud se pliega en el acumulador y el bucle recorre siempre el máximo, de
-// modo que el tiempo de ejecución no depende de en qué carácter difieren ni del
-// largo del valor recibido. (Las firmas son hex HMAC-SHA256 de 64 chars.)
-function timingSafeEqual(a: string, b: string): boolean {
-  const len = Math.max(a.length, b.length);
-  let out = a.length ^ b.length;
-  for (let i = 0; i < len; i++) {
-    out |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  }
-  return out === 0;
-}
+// stableStringify / hmacHex / timingSafeEqual used to live here, hand-mirrored
+// against Mission Control's api/_lib/ingestSign.js. verifyAs() in
+// _acaciaSign.ts owns all three now — a hand-kept mirror of a signing routine
+// is exactly the thing that drifts, and a drift here surfaces only as
+// "bad signature" at runtime.
 
 Deno.serve(async (req) => {
   try {
@@ -53,8 +28,14 @@ Deno.serve(async (req) => {
     if (!action || !ts || !sig) return Response.json({ error: 'missing action/ts/sig' }, { status: 400 });
     if (Math.abs(Date.now() - Number(ts)) > MAX_SKEW_MS) return Response.json({ error: 'stale request' }, { status: 401 });
 
-    const expected = await hmacHex(secret, `${ts}.${action}.${stableStringify(params)}`);
-    if (!timingSafeEqual(expected, String(sig))) return Response.json({ error: 'bad signature' }, { status: 401 });
+    // Verified against THIS app's derived key — see _acaciaSign.ts, and Module
+    // 15 of jospabloh/acacia-app-standard. While ACCEPT_LEGACY_MASTER is true a
+    // signature made with the bare INGEST_HMAC_SECRET is still accepted, which
+    // is what lets Mission Control and the nine apps deploy in any order.
+    const slug = Deno.env.get('ACACIA_APP_SLUG') ?? '';
+    if (!(await verifyAs(secret, slug, { ts, action, params, sig }))) {
+      return Response.json({ error: 'bad signature' }, { status: 401 });
+    }
 
     const base44 = createClientFromRequest(req);
     const sr = base44.asServiceRole;

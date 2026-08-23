@@ -799,3 +799,54 @@ creó dos negocios, cambió entre ellos, y el intento de entrar a uno sin
 membresía devolvió 403 **sin mover `business_id`**. Esa evidencia es de la
 implementación de entonces; esta pasada la releyó contra el código y el esquema
 de hoy y coincide.
+
+## Módulo 15 — el puente con Mission Control: una llave por app (2026-08-23)
+
+`INGEST_HMAC_SECRET` es **un solo valor compartido por todo el portafolio**, así
+que una firma hecha con él demuestra «alguien tiene el secreto compartido» y
+nunca «esto es CtrlHQ». Como el nombre de la app viaja en el cuerpo, cualquier
+app podía firmar una carga diciendo ser otra y Mission Control la escribía con
+esa atribución. Lo encontró la auditoría del módulo 14 de Mission Control.
+
+El arreglo es dejar de usar el maestro directamente:
+
+    appKey = HMAC-SHA256(maestro, "acacia.app.v1." + slug)
+
+El prefijo es separación de dominio: garantiza que una llave derivada no puede
+coincidir con una firma sobre un cuerpo, y el `v1` permite rotar el esquema sin
+rotar el maestro.
+
+`base44/functions/{acaciaControl,health}/_acaciaSign.ts`
+es **idéntico byte a byte en todas las apps del portafolio**. La fuente
+canónica vive en `jospabloh/acacia-app-standard` →
+`shared/bridge/acaciaSign.ts`: cámbialo allí y cópialo, no lo edites aquí.
+Dos copias idénticas: `acaciaControl` **verifica** el cuerpo firmado, y `health`
+usa `verifyBearer` — no tiene cuerpo que firmar, así que compara la llave
+derivada en tiempo constante contra la cabecera `x-health-secret`.
+
+**La migración tiene un orden y es el contrario del obvio.** La verificación
+acepta las dos llaves mientras `ACCEPT_LEGACY_MASTER` sea `true`, así que da
+igual quién despliegue primero. Pero Mission Control despliega al mergear y las
+apps a mano, así que MC siempre va primero — por eso MC sigue **firmando** con
+el maestro hasta que las nueve apps acepten derivada. Falta el paso que cierra
+el agujero de verdad: poner `ACCEPT_LEGACY_MASTER` en `false` en todas partes y
+cambiar la firma de salida de MC a `signFor`. Mientras tanto una firma con el
+maestro se sigue aceptando. Falta además poner `ACACIA_APP_SLUG=ctrlhq` en
+los secrets de esta app.
+
+**Y ahora hay una prueba, que es lo que faltaba.** El helper no lo comprobaba
+nada: cada PR de este módulo decía que recibía su primer type-check al
+desplegar. `acaciaSign.test.ts` (canónico en el repo estándar) fija el vector
+que la mitad Node de Mission Control ya fijaba —dos implementaciones de HMAC en
+dos runtimes sólo siguen siendo iguales si algo lo afirma, y una divergencia se
+ve en runtime como `bad signature` en cada llamada, que parece un secreto mal
+puesto y no lo es— y afirma lo que este módulo promete: un cuerpo firmado por
+una app que dice ser otra **no** verifica. No tiene imports externos ni toca la
+red, así que corre en un sandbox donde `jsr.io` y `deno.land` están bloqueados.
+El test canónico está en el repo estándar; este repo no tiene paso de deno en CI.
+
+**La criptografía en línea que esto reemplaza ya no está.** Cada `acaciaControl`
+llevaba su propio `stableStringify` / `hmacHex` / `timingSafeEqual`, copiados a
+mano contra `api/_lib/ingestSign.js` de Mission Control. Dejarlos al lado del
+helper no es desorden: es una segunda implementación de la misma rutina en el
+mismo archivo, que es exactamente la deriva que este módulo quita.
