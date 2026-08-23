@@ -736,3 +736,66 @@ portafolio llegó a desplegar eran **sintácticamente válidos**: la rama de rol
 motor descartaba la cláusula hermana de `user_condition`, los campos de licencia
 escribibles por el propio inquilino en puntos y rumbo, y el `PermissionProfile`
 que ningún RLS puede consultar porque vive en otra fila.
+
+### Resultado — 2026-08-23, contra el esquema desplegado
+
+Primera pasada del módulo 14 aquí. **No se encontró ningún cruce entre
+negocios.** Esta app es la que mejor responde la pregunta que el módulo hace
+sobre el **cambio de inquilino**, así que vale la pena dejar por qué.
+
+**`switch-tenant` es la implementación de referencia.** El cuerpo de la petición
+aporta **sólo** el id destino; la membresía se re-lee del servidor
+(`Membership.filter({user_id: user.id, business_id})`), el rol que se escribe es
+`membership.role` y no nada que venga del cliente, y sin membresía responde 403
+**con el mismo mensaje exista o no el negocio** — para que nadie pueda sondear
+la existencia de un inquilino probando ids. El dueño de plataforma conserva
+`admin` al cambiar, en vez de ser degradado al rol del inquilino.
+
+**El diseño de una sola `business_id` activa es lo que mantiene el aislamiento
+constante.** Cada entidad sigue comparando contra `{{user.data.business_id}}`,
+así que el aislamiento no se debilita conforme alguien acumula membresías —
+justo lo contrario de lo que pasaría con un `$in` sobre una lista.
+
+**Las funciones comprueban contra el registro almacenado**, que es la otra mitad
+de lo que el módulo pide:
+
+- `guardedEntityWrite:159` — `existing.business_id !== businessId` → 403, sobre
+  el registro leído, no sobre la petición;
+- `manage-member:24‑27` — trae el `User` objetivo y compara su `business_id`
+  almacenado contra el del solicitante;
+- `delete-account:30` — recibe `businessId` por el cuerpo pero exige
+  `caller.business_id === businessId` **y** rol `business_admin`;
+- `export-business-data:56` — `businessId = caller.business_id`, del token, y
+  filtra las 12 entidades por él.
+
+`acaciaControl` y `health` no llevan `auth.me()` a propósito: son los canales de
+Mission Control, cerrados por `INGEST_HMAC_SECRET`. `acaciaControl` es el único
+camino cross-tenant deliberado.
+
+**`Membership`, leída del esquema vivo**, confirma lo que este archivo ya
+afirmaba: `read` se llave a `data.user_id == {{user.id}}`, que es lo que permite
+al selector listar negocios en los que **no** estás sin que ver una membresía
+conceda nada. El campo `role` lleva `rls.write: {role: admin}` — bloqueado a
+nivel de campo — así que un `business_admin` no puede acuñar una membresía de
+administrador; `manage-member` (rol de servicio) es el único que escribe ese
+campo.
+
+#### Una cosa anotada, que no es fuga
+
+`Membership.create` permite a un `business_admin` insertar cualquier `user_id`
+en **su propio** negocio (el `$and` al inquilino impide hacerlo en otro), sin
+pasar por el `invite_code`. El rol queda en `staff` por el candado de campo, y
+el afectado sólo gana acceso a ese negocio, nunca a otro. No cruza inquilinos;
+lo que sí hace es que "quién está en mi negocio" no dependa del consentimiento
+del invitado. Módulo 3, no 14.
+
+#### No verificado
+
+Una sesión autenticada como `staff` de un segundo negocio. Lo que **sí** está
+verificado end-to-end, y por eso esta app llega mejor preparada que las otras:
+el flujo multi-inquilino se ejerció de verdad el 2026-08-20 con
+`.github/workflows/verify-onboarding.yml` (`phase: multitenant`) — una cuenta
+creó dos negocios, cambió entre ellos, y el intento de entrar a uno sin
+membresía devolvió 403 **sin mover `business_id`**. Esa evidencia es de la
+implementación de entonces; esta pasada la releyó contra el código y el esquema
+de hoy y coincide.
