@@ -26,36 +26,35 @@
 // can never coincide with a signature computed over a request body, and the
 // `v1` gives us a way to rotate the scheme without rotating the master.
 //
-// MIGRATION — NOT DONE. Four apps still fail the derived key.
+// MIGRATION — DONE, on a measurement. The flag is false; that is what closes
+// the cross-attribution hole.
 //
-// The flag exists because Mission Control and nine apps deploy separately: MC
-// on merge, the apps by hand. Accepting EITHER key makes deploy order
-// irrelevant, so nothing goes dark while the fleet catches up.
+// It existed because Mission Control and nine apps deploy separately: MC on
+// merge, the apps by hand. Accepting EITHER key made deploy order irrelevant,
+// so nothing went dark while the fleet caught up.
 //
-// Where it actually stands, measured rather than assumed:
+// The record, because it took two attempts and the difference between them is
+// the whole lesson:
 //   - 2026-08-23 — all nine apps deployed with derived VERIFICATION.
-//   - 2026-08-24 — MC switched to derived SIGNING. A sync of all nine had
-//     radar, rumbo, puntos and liuma REJECT the derived key and accept the
-//     master; the other five verified derived on the first attempt. The five
-//     that work are the five given ACACIA_APP_SLUG that day. The four that
-//     fail are the four whose slug predates this work.
+//   - 2026-08-24, 13:38 UTC — MC switched to derived SIGNING and a sync of all
+//     nine ran. The flag was set false that afternoon on the claim that nothing
+//     had fallen back. The log of that very sync said radar, rumbo, puntos and
+//     liuma had. They lost the bridge for two hours until it was reverted.
+//   - 2026-08-24, 16:29 UTC — ACACIA_APP_SLUG corrected in those four, apps
+//     redeployed, sync re-run: nine audit rows, ZERO "rejected the derived key"
+//     warnings in MC's log for that window. That is the gate, and this time it
+//     was read.
 //
-// The flag was set to false that afternoon on a claim that nothing had fallen
-// back — written without reading the warnings that said otherwise — and the
-// four apps lost their bridge until it was reverted. That is why the wording
-// below is a measurement and not a date.
+// The four had the secret set to something other than their Mission Control id.
+// Their deployed acaciaControl was already current — the CLI reported it
+// unchanged — so the only variable left was the value, which four CLAUDE.md
+// files asserted was correct and nobody had opened the panel to check.
 //
-// TO FINISH: fix those four (read ACACIA_APP_SLUG in each app's Base44 panel —
-// it must equal the Mission Control id exactly — and redeploy acaciaControl in
-// case the live copy predates this file). Then run a full nine-app sync and
-// read Mission Control's log for that window. ZERO "rejected the derived key"
-// warnings is the gate. Only then set this false, everywhere, in the same pass
-// that deletes MC's appBridge fallback.
-//
-// A NEW app should be created with this already false: it has no legacy
-// signature in flight, so there is nothing for the flag to protect.
+// A NEW app starts here, at false. There is no legacy path to opt into: a
+// missing or misspelled ACACIA_APP_SLUG now fails the signature instead of
+// quietly degrading to the shared master, which is the whole point.
 
-export const ACCEPT_LEGACY_MASTER = true;
+export const ACCEPT_LEGACY_MASTER = false;
 
 const encoder = new TextEncoder();
 
@@ -120,7 +119,7 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 
 /**
  * Verify an incoming bridge body against this app's derived key. The master is
- * accepted only while ACCEPT_LEGACY_MASTER is true, which it still is.
+ * accepted only while ACCEPT_LEGACY_MASTER is true, which it no longer is.
  * Rejects on a stale timestamp before doing any crypto: the replay window is
  * the cheap check.
  */
@@ -146,12 +145,12 @@ export async function verifyAs(
 
   const message = canonicalMessage(ts, action, params);
 
-  // A missing slug falls through to the legacy branch below rather than
-  // failing outright, which is what keeps an app alive while its secret is
-  // still missing. Once the flag is false that same fall-through becomes a
-  // hard failure, which is the point: an app that keeps working without
-  // ACACIA_APP_SLUG is an app whose signature proves nothing about which app
-  // it is.
+  // With the flag false, a missing slug FAILS here instead of degrading to the
+  // shared master. That is the point: an app that keeps working without
+  // ACACIA_APP_SLUG is an app whose signature proves nothing about which app it
+  // is. During the rollout this same fall-through did the opposite job — it
+  // kept the bridge alive until every secret was in place, and the log line in
+  // Mission Control's appBridge was what named the apps still missing one.
   if (slug) {
     const key = await deriveAppKey(master, slug);
     if (timingSafeEqualHex(await hmacHex(key, message), String(sig))) return true;
@@ -167,6 +166,13 @@ export async function verifyAs(
  * The bearer form, for endpoints with no body to sign (`health`,
  * `generarAlertas`). Same derivation, compared in constant time. Callers send
  * the derived value in `x-health-secret`; Mission Control computes it per app.
+ *
+ * NOTE for whoever flips the flag on a fleet: this is the one place where doing
+ * so can break a caller Mission Control cannot see. MC probes health through
+ * `acaciaControl`'s `ping`, never this header — `bearerFor` exists in its
+ * ingestSign.js and has no caller. But an external uptime monitor or a manual
+ * trigger configured with the bare master starts getting 401 the moment the
+ * flag goes false. Repoint it at the derived value; do not re-enable the flag.
  */
 export async function verifyBearer(
   master: string,
