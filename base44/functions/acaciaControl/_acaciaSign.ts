@@ -26,21 +26,24 @@
 // can never coincide with a signature computed over a request body, and the
 // `v1` gives us a way to rotate the scheme without rotating the master.
 //
-// MIGRATION — READ BEFORE CHANGING ACCEPT_LEGACY_MASTER
+// MIGRATION — DONE. The flag is false, and that is what closed the hole.
 //
-// Mission Control and nine apps have to agree, and they deploy separately. A
-// hard switch would black out the whole bridge — licences, tickets, usage and
-// health for every app at once — for however long the slowest deploy takes.
-// So verification accepts EITHER key while ACCEPT_LEGACY_MASTER is true, which
-// makes deploy order irrelevant. Signing always uses the derived key from the
-// first deploy, so traffic migrates on its own.
+// It existed because Mission Control and nine apps deploy separately: MC on
+// merge, the apps by hand. Accepting EITHER key made deploy order irrelevant,
+// so nothing went dark while the fleet caught up.
 //
-// Step 2, once every app and Mission Control are deployed: flip the constant to
-// false everywhere and redeploy. Until then the master is still accepted, so
-// the cross-attribution hole is only half closed — the flip is what closes it.
-// Grep the constant across the portfolio to see who is still on legacy.
+// Both halves are now verified against production, not assumed:
+//   - 2026-08-23 — all nine apps deployed with derived VERIFICATION.
+//   - 2026-08-24 — MC switched to derived SIGNING, and all nine were synced
+//     one by one. Every call verified on the first attempt; the temporary
+//     master fallback in MC's appBridge.js never fired once, and has been
+//     deleted along with this flag's last reason to be true.
+//
+// A new app starts here, at false. There is no legacy path to opt into: a
+// missing or misspelled ACACIA_APP_SLUG now fails the signature instead of
+// quietly degrading to the shared master, which is the whole point.
 
-export const ACCEPT_LEGACY_MASTER = true;
+export const ACCEPT_LEGACY_MASTER = false;
 
 const encoder = new TextEncoder();
 
@@ -104,10 +107,10 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 }
 
 /**
- * Verify an incoming bridge body. Accepts this app's derived key, and — while
- * ACCEPT_LEGACY_MASTER is true — the master, so Mission Control and the apps
- * can deploy in any order. Rejects on a stale timestamp before doing any
- * crypto: the replay window is the cheap check.
+ * Verify an incoming bridge body against this app's derived key. The master is
+ * accepted only while ACCEPT_LEGACY_MASTER is true, which it no longer is.
+ * Rejects on a stale timestamp before doing any crypto: the replay window is
+ * the cheap check.
  */
 export async function verifyAs(
   master: string,
@@ -131,12 +134,11 @@ export async function verifyAs(
 
   const message = canonicalMessage(ts, action, params);
 
-  // A missing slug degrades to legacy rather than rejecting everything. Five
-  // apps have never needed ACACIA_APP_SLUG — only the four that push tickets
-  // did — so during the rollout this branch is the difference between "the
-  // bridge keeps working until the secret is set" and "the bridge dies the
-  // moment this deploys". Once ACCEPT_LEGACY_MASTER is false a missing slug
-  // DOES fail closed, which is correct: by then the secret is mandatory.
+  // With the flag false, a missing slug now FAILS instead of degrading to the
+  // shared master. That is deliberate: ACACIA_APP_SLUG is mandatory, and an
+  // app that silently kept working without it is an app whose signature proves
+  // nothing about which app it is. During the rollout this branch did the
+  // opposite — it kept the bridge alive until every secret was in place.
   if (slug) {
     const key = await deriveAppKey(master, slug);
     if (timingSafeEqualHex(await hmacHex(key, message), String(sig))) return true;
