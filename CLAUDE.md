@@ -828,11 +828,10 @@ derivada en tiempo constante contra la cabecera `x-health-secret`.
 acepta las dos llaves mientras `ACCEPT_LEGACY_MASTER` sea `true`, así que da
 igual quién despliegue primero. Pero Mission Control despliega al mergear y las
 apps a mano, así que MC siempre va primero — por eso MC sigue **firmando** con
-el maestro hasta que las nueve apps acepten derivada. Falta el paso que cierra
-el agujero de verdad: poner `ACCEPT_LEGACY_MASTER` en `false` en todas partes y
-cambiar la firma de salida de MC a `signFor`. Mientras tanto una firma con el
-maestro se sigue aceptando. Falta además poner `ACACIA_APP_SLUG=ctrlhq` en
-los secrets de esta app.
+el maestro hasta que las nueve apps acepten derivada. **Los dos pasos ya están hechos** (2026-08-24): MC firma con `signFor` y
+`ACCEPT_LEGACY_MASTER` está en `false` en los once sitios, así que una firma con
+el maestro **ya no se acepta** — que es exactamente lo que cierra el agujero. `ACACIA_APP_SLUG=ctrlhq` está puesto en los secrets de esta app y verificado:
+la sincronización de las 16:29 UTC no registró ni una advertencia contra ella.
 
 **Y ahora hay una prueba, que es lo que faltaba.** El helper no lo comprobaba
 nada: cada PR de este módulo decía que recibía su primer type-check al
