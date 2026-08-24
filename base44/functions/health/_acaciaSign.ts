@@ -26,24 +26,36 @@
 // can never coincide with a signature computed over a request body, and the
 // `v1` gives us a way to rotate the scheme without rotating the master.
 //
-// MIGRATION — DONE. The flag is false, and that is what closed the hole.
+// MIGRATION — NOT DONE. Four apps still fail the derived key.
 //
-// It existed because Mission Control and nine apps deploy separately: MC on
-// merge, the apps by hand. Accepting EITHER key made deploy order irrelevant,
-// so nothing went dark while the fleet caught up.
+// The flag exists because Mission Control and nine apps deploy separately: MC
+// on merge, the apps by hand. Accepting EITHER key makes deploy order
+// irrelevant, so nothing goes dark while the fleet catches up.
 //
-// Both halves are now verified against production, not assumed:
+// Where it actually stands, measured rather than assumed:
 //   - 2026-08-23 — all nine apps deployed with derived VERIFICATION.
-//   - 2026-08-24 — MC switched to derived SIGNING, and all nine were synced
-//     one by one. Every call verified on the first attempt; the temporary
-//     master fallback in MC's appBridge.js never fired once, and has been
-//     deleted along with this flag's last reason to be true.
+//   - 2026-08-24 — MC switched to derived SIGNING. A sync of all nine had
+//     radar, rumbo, puntos and liuma REJECT the derived key and accept the
+//     master; the other five verified derived on the first attempt. The five
+//     that work are the five given ACACIA_APP_SLUG that day. The four that
+//     fail are the four whose slug predates this work.
 //
-// A new app starts here, at false. There is no legacy path to opt into: a
-// missing or misspelled ACACIA_APP_SLUG now fails the signature instead of
-// quietly degrading to the shared master, which is the whole point.
+// The flag was set to false that afternoon on a claim that nothing had fallen
+// back — written without reading the warnings that said otherwise — and the
+// four apps lost their bridge until it was reverted. That is why the wording
+// below is a measurement and not a date.
+//
+// TO FINISH: fix those four (read ACACIA_APP_SLUG in each app's Base44 panel —
+// it must equal the Mission Control id exactly — and redeploy acaciaControl in
+// case the live copy predates this file). Then run a full nine-app sync and
+// read Mission Control's log for that window. ZERO "rejected the derived key"
+// warnings is the gate. Only then set this false, everywhere, in the same pass
+// that deletes MC's appBridge fallback.
+//
+// A NEW app should be created with this already false: it has no legacy
+// signature in flight, so there is nothing for the flag to protect.
 
-export const ACCEPT_LEGACY_MASTER = false;
+export const ACCEPT_LEGACY_MASTER = true;
 
 const encoder = new TextEncoder();
 
@@ -108,7 +120,7 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 
 /**
  * Verify an incoming bridge body against this app's derived key. The master is
- * accepted only while ACCEPT_LEGACY_MASTER is true, which it no longer is.
+ * accepted only while ACCEPT_LEGACY_MASTER is true, which it still is.
  * Rejects on a stale timestamp before doing any crypto: the replay window is
  * the cheap check.
  */
@@ -134,11 +146,12 @@ export async function verifyAs(
 
   const message = canonicalMessage(ts, action, params);
 
-  // With the flag false, a missing slug now FAILS instead of degrading to the
-  // shared master. That is deliberate: ACACIA_APP_SLUG is mandatory, and an
-  // app that silently kept working without it is an app whose signature proves
-  // nothing about which app it is. During the rollout this branch did the
-  // opposite — it kept the bridge alive until every secret was in place.
+  // A missing slug falls through to the legacy branch below rather than
+  // failing outright, which is what keeps an app alive while its secret is
+  // still missing. Once the flag is false that same fall-through becomes a
+  // hard failure, which is the point: an app that keeps working without
+  // ACACIA_APP_SLUG is an app whose signature proves nothing about which app
+  // it is.
   if (slug) {
     const key = await deriveAppKey(master, slug);
     if (timingSafeEqualHex(await hmacHex(key, message), String(sig))) return true;
