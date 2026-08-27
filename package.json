@@ -21,7 +21,7 @@
     "validate:functions": "node scripts/validate-functions.mjs"
   },
   "dependencies": {
-    "@base44/sdk": "^0.8.43",
+    "@base44/sdk": "^0.8.44",
     "@base44/vite-plugin": "^1.0.31",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",
