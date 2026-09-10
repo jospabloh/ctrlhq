@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/PermissionContext";
-import TenantSwitcher from "@/components/TenantSwitcher";
 
 const BILLING_BANNER = {
   view_only: {
@@ -83,7 +82,17 @@ export default function Layout() {
             subtitle here; the business is the headline. */}
         <div className="h-16 flex items-center gap-2 px-6 border-b border-sidebar-border">
           <img src="/logo-192.png" alt="CtrlHQ" className="w-9 h-9 shrink-0" />
-          <TenantSwitcher />
+          <div className="min-w-0">
+            <p
+              className="font-heading font-semibold text-sm text-sidebar-foreground truncate"
+              title={business?.name || "CtrlHQ"}
+            >
+              {business?.name || "CtrlHQ"}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {business?.name ? "CtrlHQ · Gestión Financiera" : "Gestión Financiera"}
+            </p>
+          </div>
         </div>
         <nav className="p-3 space-y-1">
           {visibleNavItems.map((item) => {

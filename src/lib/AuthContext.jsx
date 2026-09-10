@@ -11,7 +11,6 @@ export const AuthProvider = ({ children }) => {
   // only by Mission Control). null until the user has completed onboarding
   // (see complete-onboarding function) or while it's loading.
   const [business, setBusiness] = useState(null);
-  const [memberships, setMemberships] = useState([]);
   const [isLoadingBusiness, setIsLoadingBusiness] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -105,7 +104,6 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       setAuthChecked(true);
       await loadBusiness(currentUser);
-      await loadMemberships(currentUser);
       return currentUser;
     } catch (error) {
       console.error('User auth check failed:', error);
@@ -148,42 +146,6 @@ export const AuthProvider = ({ children }) => {
 
   const refreshBusiness = () => loadBusiness(user);
 
-  // Every tenant this user may enter. Read straight from Membership, whose RLS
-  // matches the caller's own rows on {{user.id}} — deliberately NOT scoped by
-  // business_id, since the whole point is to list the tenants they are *not*
-  // currently in. Seeing a membership grants nothing on its own: entering a
-  // tenant still goes through the switch-tenant function, which re-checks
-  // membership server-side before repointing business_id.
-  const loadMemberships = async (forUser) => {
-    if (!forUser?.id) {
-      setMemberships([]);
-      return [];
-    }
-    try {
-      const rows = await base44.entities.Membership.filter({ user_id: forUser.id });
-      const list = rows || [];
-      setMemberships(list);
-      return list;
-    } catch (error) {
-      // Never a hard failure: a user with one tenant does not need this list,
-      // and the app must stay usable if it cannot be read.
-      console.error('Failed to load memberships:', error);
-      setMemberships([]);
-      return [];
-    }
-  };
-
-  const refreshMemberships = () => loadMemberships(user);
-
-  // Moving between tenants is a server-side operation by design — business_id
-  // is field-locked precisely so the browser cannot point itself anywhere.
-  const switchTenant = async (businessId) => {
-    await base44.functions.invoke('switch-tenant', { businessId });
-    const refreshed = await checkUserAuth();
-    await loadBusiness(refreshed || { ...user, business_id: businessId });
-    return refreshed;
-  };
-
   const logout = (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
@@ -206,9 +168,6 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{
       user,
       business,
-      memberships,
-      refreshMemberships,
-      switchTenant,
       isLoadingBusiness,
       refreshBusiness,
       isAuthenticated,

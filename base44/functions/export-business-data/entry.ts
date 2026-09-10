@@ -19,14 +19,12 @@ const BUILD = "2026-08-21.export-business-data.1";
  * their data instead of nothing.
  *
  * `User` is deliberately NOT exported (other members' PII; the roster is
- * already visible in Cuenta's members tab). `Membership` is, since it is the
- * tenant's own record of who may enter it.
+ * already visible in Cuenta's members tab).
  */
 const EXPORTED_ENTITIES = [
   "Collaborator",
   "Expense",
   "Income",
-  "Membership",
   "PaymentMethod",
   "Payroll",
   "PermissionProfile",
