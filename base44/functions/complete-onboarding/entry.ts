@@ -13,7 +13,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 // (Deliberately paraphrased rather than quoting the old string: a comment
 // containing it makes `grep` report the guard as still present, which cost a
 // few minutes of double-checking the first time.)
-const BUILD = "2026-08-20.multitenant.1";
+const BUILD = "2026-09-10.single-tenant.1";
 
 // Onboarding "Safe function" (STANDARD.md Modules 2 & 3): the ONLY place a
 // user's role/business_id are ever set. Runs the actual writes as service
@@ -84,9 +84,17 @@ Deno.serve(async (req) => {
     if (!user) {
       return Response.json({ message: "Unauthorized" }, { status: 401 });
     }
-    // No blanket "you already have a business" rejection any more: a user may
-    // belong to several tenants (see base44/entities/Membership.jsonc). Joining
-    // one twice is still refused, below, where we know which one.
+    // One user, one tenant. A caller who already has a business_id cannot
+    // create or join another: the tenant picker that used to let them move
+    // between businesses is gone, so a second business would strand the first
+    // with no way back. Leaving a tenant is manage-member's "remove", run by
+    // that tenant's own admin.
+    if (user.business_id) {
+      return Response.json(
+        { message: "Ya perteneces a un negocio. Pide a un administrador que te dé de baja antes de unirte a otro." },
+        { status: 409 }
+      );
+    }
 
     const { mode, businessName, inviteCode } = await req.json();
 
@@ -101,12 +109,6 @@ Deno.serve(async (req) => {
         invite_code: randomInviteCode(),
       });
       try {
-        await base44.asServiceRole.entities.Membership.create({
-          business_id: business.id,
-          user_id: user.id,
-          user_email: user.email,
-          role: "business_admin",
-        });
         await withTimeout(
           base44.asServiceRole.entities.User.update(user.id, {
             ...rolePatchFor(user, "business_admin"),
@@ -123,12 +125,6 @@ Deno.serve(async (req) => {
         // security edge. Best-effort: if the rollback itself fails, the
         // original error is still what the caller needs to hear.
         try {
-          const stale = await base44.asServiceRole.entities.Membership.filter(
-            { business_id: business.id }, null, 100
-          );
-          for (const m of stale || []) {
-            await base44.asServiceRole.entities.Membership.delete(m.id);
-          }
           await base44.asServiceRole.entities.Business.delete(business.id);
         } catch (_) { /* keep reporting the original failure */ }
         throw error;
@@ -146,22 +142,9 @@ Deno.serve(async (req) => {
       if (!business) {
         return Response.json({ message: "Código de invitación inválido." }, { status: 404 });
       }
-      const already = await base44.asServiceRole.entities.Membership.filter(
-        { user_id: user.id, business_id: business.id }, null, 1
-      );
-      if (!already?.length) {
-        await base44.asServiceRole.entities.Membership.create({
-          business_id: business.id,
-          user_id: user.id,
-          user_email: user.email,
-          role: "staff",
-        });
-      } else if (user.business_id === business.id) {
-        return Response.json({ message: "Ya perteneces a ese negocio." }, { status: 409 });
-      }
       await withTimeout(
         base44.asServiceRole.entities.User.update(user.id, {
-          ...rolePatchFor(user, already?.[0]?.role || "staff"),
+          ...rolePatchFor(user, "staff"),
           business_id: business.id,
         }),
         25_000,

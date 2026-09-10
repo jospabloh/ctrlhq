@@ -23,94 +23,34 @@ publishing). This file covers CtrlHQ-specific architecture.
   `business_id`: create a new Business (become `business_admin`) or redeem an
   existing one's `invite_code` (become `staff`).
 
-## Multi-tenancy: one active tenant, many memberships
+## One user, one tenant (the tenant picker was removed, 2026-09-10)
 
-A user can belong to several businesses — `business_admin` of one, `staff` of
-another. The model deliberately keeps `User.business_id` a **single** value
-meaning *the tenant you are operating in right now*, and adds `Membership`
-(`base44/entities/Membership.jsonc`) as the record of which tenants you may
-enter and as what.
+A user belongs to exactly one `Business`. `User.business_id` names it, every
+tenant entity's RLS compares against `{{user.data.business_id}}`, and there is
+no in-app way to move to another one.
 
-**Why it is built this way.** Every tenant entity's RLS still reads
-`data.business_id == {{user.data.business_id}}`, completely unchanged, so a
-user can only ever touch the one tenant they are currently in. Isolation does
-not get weaker as people join more tenants. The alternative — letting RLS match
-"business_id is in my list of memberships" — would have meant rewriting the
-rules on all 13 tenant entities and relying on `$in` against an array user
-field, which is not a verified Base44 capability; a silent widening of data
-access is exactly the failure mode worth designing out.
+**There used to be more.** A `Membership` entity plus a `switch-tenant`
+function, a `SelectTenant` screen and a sidebar `TenantSwitcher` let one email
+hold several businesses and move between them. It was removed because the
+feature never made it to production across the portfolio; what is left is the
+model this app always had underneath it, which never got weaker as memberships
+accumulated precisely because `business_id` stayed a single value.
 
-- **`Membership`** — `(business_id, user_id, user_email, role)`. Its `read` rule
-  keys the caller's own rows on `{{user.id}}` (from the token) rather than on
-  `business_id`, which is what lets the picker list tenants you are *not*
-  currently in. Seeing a membership grants nothing by itself.
-- **`base44/functions/switch-tenant`** — the only sanctioned way `business_id`
-  changes after onboarding. Re-derives membership server-side from `Membership`
-  (never from the request body, which supplies only the target id), then writes
-  `business_id` and the role that membership grants. Returns the same 403
-  whether the business does not exist or you simply are not in it — a tenant's
-  existence is not something an outsider gets to probe for by id.
-- **`complete-onboarding`** creates a `Membership` alongside the Business, and
-  no longer rejects a caller who already has one: creating or joining an
-  additional tenant is the point. Joining a tenant you are already in is still
-  refused.
-- **`User.role`** always reflects your role in the *active* tenant.
-  The platform owner (`role: "admin"`) is the exception and keeps that role
-  across every switch — see the Backend functions section for why writing role
-  on that account fails and why it would be wrong anyway.
-- **UI** — `src/pages/SelectTenant.jsx` asks which tenant to open, once per
-  session, and only when you have more than one (a single membership skips it).
-  `src/components/TenantSwitcher.jsx` is the sidebar's business name, made a
-  dropdown only when there is somewhere to switch to; switching reloads the
-  page so nothing from the previous tenant survives on screen.
+What that removal implies, and it is the part worth remembering:
 
-**Verification status — CONFIRMED live end-to-end** (2026-08-20 04:44, via
-`.github/workflows/verify-onboarding.yml` with `phase: multitenant`). One
-account created two businesses, was left in the second, switched back to the
-first, and `business_id` really moved each time. Memberships were written for
-both. The assertion that matters also holds: switching into a business the
-account has no `Membership` for is refused with `403 {"message":"No perteneces
-a ese negocio."}` **and** the refused switch does not move `business_id`. Both
-functions answered `"build":"2026-08-20.multitenant.1"`. `delete-account`
-cleaned up both tenants on the way out, exercising Module 7 as a side effect.
+- **`complete-onboarding` refuses a caller who already has a `business_id`**
+  (409), in both `create` and `join` modes. That rejection is not tidiness:
+  without a picker, acquiring a second business would strand the first with no
+  way back to it.
+- **`manage-member`'s `remove` clears `business_id` and that IS the removal.**
+  There is no second record granting a way back in, so nothing else to delete.
+- **`delete-account` drops every member back to onboarding.** There is no other
+  business to fall them back into.
+- **Leaving a tenant is the tenant admin's action**, via `manage-member`. A
+  member cannot walk out on their own.
 
-**Getting there cost hours, and the cause was never in this repo: after a
-`functions deploy`, the runtime keeps serving the previous build until the
-function goes idle.** For roughly two hours and across three deploys,
-`complete-onboarding` kept rejecting a second business with the
-pre-multi-tenancy wording — a string present in neither this repo nor Base44's
-own sandbox copy (both grepped). Six minutes after a deploy that printed
-`complete-onboarding deployed (1.5s)`, the runtime still produced it. Left
-alone for about 90 minutes with no traffic, the same function then answered
-with the new build and everything passed on the first try.
-
-The `phase: probe` step was what localized it: `switch-tenant`, **new** in that
-same deploy, answered on the runtime, while `complete-onboarding`, **updated**
-in it, did not reflect its update. A warm worker not being recycled on
-redeploy fits exactly — `switch-tenant` had no warm worker, so it loaded fresh
-— and the eventual recovery after idling confirms it.
-
-What to do with this:
-
-1. **Do not trust `deployed (Ns)` as evidence a change is live.** Both
-   functions return a `build` string with every successful response precisely
-   so this is readable rather than inferred. Read it before believing a
-   deploy, and bump `BUILD` on every meaningful change.
-2. **After deploying a change to an existing function, expect a delay.** If
-   the behaviour looks stale, leave it alone rather than redeploying in a
-   loop; give it time with no traffic and re-check the `build` string. Three
-   redeploys achieved nothing that waiting did not.
-3. If it ever fails to recover, the workaround the evidence supports is
-   publishing the changed logic under a *new* function name (new functions do
-   deploy immediately) and repointing the client.
-
-**Operational gotcha for that workflow: this app's outbound mail gets throttled.**
-After roughly ten sends in an hour, Base44 stops delivering both registration
-OTPs and password-reset links — the API still answers `HTTP 200` and claims the
-mail was sent, so the failure looks like the workflow's rather than the mail
-provider's. Registration OTPs dried up first, reset links a few minutes later.
-Space the runs out, or drive the check from an account whose password is
-already known.
+Deleting the `Membership` entity from the deployed schema is a separate,
+manual step — see the deploy note at the end of this file.
 
 ## Permissions (Module 3)
 
@@ -740,21 +680,18 @@ que ningún RLS puede consultar porque vive en otra fila.
 ### Resultado — 2026-08-23, contra el esquema desplegado
 
 Primera pasada del módulo 14 aquí. **No se encontró ningún cruce entre
-negocios.** Esta app es la que mejor responde la pregunta que el módulo hace
-sobre el **cambio de inquilino**, así que vale la pena dejar por qué.
+negocios.**
 
-**`switch-tenant` es la implementación de referencia.** El cuerpo de la petición
-aporta **sólo** el id destino; la membresía se re-lee del servidor
-(`Membership.filter({user_id: user.id, business_id})`), el rol que se escribe es
-`membership.role` y no nada que venga del cliente, y sin membresía responde 403
-**con el mismo mensaje exista o no el negocio** — para que nadie pueda sondear
-la existencia de un inquilino probando ids. El dueño de plataforma conserva
-`admin` al cambiar, en vez de ser degradado al rol del inquilino.
+> **Nota del 2026-09-10:** esta pasada auditaba también el cambio de inquilino
+> (`switch-tenant` + `Membership`), y lo daba por la mejor implementación del
+> portafolio. Esa parte ya no existe — el feature se retiró; ver "One user, one
+> tenant" arriba. Lo que queda de esta auditoría sigue siendo válido: el
+> aislamiento nunca dependió del selector.
 
 **El diseño de una sola `business_id` activa es lo que mantiene el aislamiento
-constante.** Cada entidad sigue comparando contra `{{user.data.business_id}}`,
-así que el aislamiento no se debilita conforme alguien acumula membresías —
-justo lo contrario de lo que pasaría con un `$in` sobre una lista.
+constante.** Cada entidad compara contra `{{user.data.business_id}}`, y con un
+solo negocio por usuario la pregunta "¿en qué inquilino estoy?" tiene una sola
+respuesta.
 
 **Las funciones comprueban contra el registro almacenado**, que es la otra mitad
 de lo que el módulo pide:
@@ -772,33 +709,13 @@ de lo que el módulo pide:
 Mission Control, cerrados por `INGEST_HMAC_SECRET`. `acaciaControl` es el único
 camino cross-tenant deliberado.
 
-**`Membership`, leída del esquema vivo**, confirma lo que este archivo ya
-afirmaba: `read` se llave a `data.user_id == {{user.id}}`, que es lo que permite
-al selector listar negocios en los que **no** estás sin que ver una membresía
-conceda nada. El campo `role` lleva `rls.write: {role: admin}` — bloqueado a
-nivel de campo — así que un `business_admin` no puede acuñar una membresía de
-administrador; `manage-member` (rol de servicio) es el único que escribe ese
-campo.
-
-#### Una cosa anotada, que no es fuga
-
-`Membership.create` permite a un `business_admin` insertar cualquier `user_id`
-en **su propio** negocio (el `$and` al inquilino impide hacerlo en otro), sin
-pasar por el `invite_code`. El rol queda en `staff` por el candado de campo, y
-el afectado sólo gana acceso a ese negocio, nunca a otro. No cruza inquilinos;
-lo que sí hace es que "quién está en mi negocio" no dependa del consentimiento
-del invitado. Módulo 3, no 14.
-
 #### No verificado
 
 Una sesión autenticada como `staff` de un segundo negocio. Lo que **sí** está
 verificado end-to-end, y por eso esta app llega mejor preparada que las otras:
-el flujo multi-inquilino se ejerció de verdad el 2026-08-20 con
-`.github/workflows/verify-onboarding.yml` (`phase: multitenant`) — una cuenta
-creó dos negocios, cambió entre ellos, y el intento de entrar a uno sin
-membresía devolvió 403 **sin mover `business_id`**. Esa evidencia es de la
-implementación de entonces; esta pasada la releyó contra el código y el esquema
-de hoy y coincide.
+el flujo de onboarding se ejerció de verdad el 2026-08-20 con
+`.github/workflows/verify-onboarding.yml`. (La parte `phase: multitenant` de esa
+verificación cubría el selector, que ya no existe.)
 
 ## Módulo 15 — el puente con Mission Control: una llave por app (2026-08-23)
 
@@ -880,3 +797,31 @@ gastar uno de los 50 slots de función que Base44 concede por app.
 soporte.** Aquí sólo hay uno; en otras apps del portafolio la solicitud de baja
 de la zona de peligro (módulo 7) también crea un ticket y es la que nadie se
 acuerda de conectar.
+
+## Pendiente de despliegue: borrar la entidad `Membership` (2026-09-10)
+
+El repo ya no tiene `base44/entities/Membership.jsonc` ni un solo lector o
+escritor de esa entidad. **El esquema desplegado todavía la tiene**, y borrarla
+de producción es un paso a mano:
+
+    npm run deploy            # funciones (complete-onboarding, manage-member,
+                              # delete-account, export-business-data)
+    npm run deploy:site       # frontend
+    npm run deploy:entities   # DESTRUCTIVO — es el único que borra la entidad
+
+**Antes del `deploy:entities`, borra la fila que queda.** Al 2026-09-10 hay
+**1 `Membership`** en producción (`6a86328de9a80d4a9a18e9af`,
+`h.josepablo@gmail.com` en el negocio `6a8630927c2904c82db89f8c`). Base44
+**rechaza borrar una entidad con registros**, y el push es todo-o-nada: en
+stockflow ese mismo fallo dejó a rumbo sin desplegar **ninguna** de sus 27
+entidades por culpa de una sola. Con la fila viva, este `deploy:entities`
+falla entero y ningún otro cambio de esquema pasa.
+
+Mientras `Membership` siga desplegada no hace daño —nadie la lee ni la
+escribe— así que el orden no es urgente; lo que no vale es correr
+`deploy:entities` a ciegas y creer que pasó.
+
+Y `complete-onboarding` cambia de comportamiento, así que **lee su `build` en
+una respuesta real** (`2026-09-10.single-tenant.1`) antes de darlo por
+desplegado: este repo ya documentó arriba que el runtime puede seguir sirviendo
+el build anterior después de un `deployed (Ns)`.
