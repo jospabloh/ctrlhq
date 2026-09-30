@@ -21,7 +21,9 @@ publishing). This file covers CtrlHQ-specific architecture.
   function's header comment for why.
 - New users land on `/onboarding` (src/pages/Onboarding.jsx) until they have a
   `business_id`: create a new Business (become `business_admin`) or redeem an
-  existing one's `invite_code` (become `staff`).
+  existing one's `invite_code` (this only files a PENDING request; a
+  business_admin must approve it and pick the role — see "Correo por código y
+  unión por solicitud", 2026-09-30).
 
 ## One user, one tenant (the tenant picker was removed, 2026-09-10)
 
@@ -825,3 +827,103 @@ Y `complete-onboarding` cambia de comportamiento, así que **lee su `build` en
 una respuesta real** (`2026-09-10.single-tenant.1`) antes de darlo por
 desplegado: este repo ya documentó arriba que el runtime puede seguir sirviendo
 el build anterior después de un `deployed (Ns)`.
+
+## Correo por código y unión por solicitud (2026-09-30)
+
+### A. Verificación de correo (OTP)
+
+Un cliente de stockflow se registró, Base44 le mandó el código y la app nunca le
+mostró dónde escribirlo. Aquí el registro ya tenía pantalla de código; lo que
+faltaba era el **login** (una cuenta sin verificar veía el error crudo en
+inglés) y compartir el paso.
+
+- `src/components/VerifyEmailStep.jsx` (nuevo, compartido): `InputOTP` de 6
+  dígitos, `verifyOtp({email, otpCode})`, `resendOtp`, errores en español. Tras
+  verificar entra solo (token de `verifyOtp` o `loginViaEmailPassword` con la
+  contraseña ya escrita); si eso falla, `onVerified({needsLogin:true})` y se
+  manda a `/login`.
+- `src/lib/emailVerification.js` (nuevo): `needsEmailVerification(error)`
+  (regex sobre el mensaje) y los mensajes de error. **Los mensajes se eligen por
+  causa, no se repite el texto de la plataforma**, que es inglés y genérico.
+- `Login.jsx`: si `loginViaEmailPassword` falla por correo sin verificar,
+  reenvía el código y abre el paso; los demás errores conservan su mensaje.
+  `Register.jsx` usa el mismo componente.
+
+### B. Unirse con código ya NO da acceso
+
+Antes `complete-onboarding` mode `join` escribía `business_id` y `role: staff` al
+instante: quien tuviera (o adivinara) el código entraba a los datos. Ahora:
+
+- **`User.pending_business_id`** (campo nuevo, `rls.write` solo admin; ninguna
+  RLS lo compara, así que no concede nada por sí mismo). No hay entidad nueva.
+- `complete-onboarding`: `join` solo escribe `pending_business_id` (idempotente
+  para el mismo negocio, 409 si ya hay otra solicitud) y **no** devuelve el
+  `Business` (lleva el código y la licencia). Acciones nuevas: `status` (lo que
+  la pantalla necesita tras recargar) y `cancel_join`. `create` responde 409 con
+  una solicitud pendiente; los 409 de "ya perteneces a un negocio" se conservan.
+  La decisión "¿ya tiene negocio / ya espera uno?" sale de una **relectura del
+  `User` con service role**, no de `auth.me()`. `BUILD` = `2026-09-30.join-request.1`.
+- `manage-member`: acciones `list_pending`, `approve` y `reject` (dentro de la
+  función existente, 7/40 endpoints, sin cambio). Quien llama se relee con
+  service role y debe ser `business_admin` (o plataforma); la solicitud se
+  valida contra el `pending_business_id` **almacenado** y solo del negocio del
+  admin; el rol elegido se valida contra `ASSIGNABLE_ROLES`
+  (`business_admin` | `staff`, **nunca** `admin`). Solo `approve` escribe
+  `business_id`/`role`, y limpia la solicitud. Si el negocio ya no existe o la
+  persona ya tiene negocio, descarta la solicitud en vez de conceder. La lógica
+  pura está en `manage-member/_joinRules.ts` (sin imports) y `remove` también
+  limpia `pending_business_id`. `remove` ya no baja el rol del dueño de plataforma
+  (mismo motivo que `rolePatchFor`).
+- `delete-account` limpia las solicitudes pendientes hacia el negocio borrado.
+- `Onboarding.jsx`: pantalla "Solicitud enviada, esperando aprobación" que sale
+  de `status` (sobrevive a recargar), se refresca sola cada 15 s y permite
+  cancelar. `Cuenta.jsx` > Miembros: bloque "Solicitudes para unirse" con
+  selector de rol (por defecto Personal), Aprobar y Rechazar.
+- **`Business.create` ahora es solo admin/servicio.** La rama `created_by_id`
+  dejaba a cualquier usuario crear un `Business` por SDK con el `invite_code`
+  que quisiera (y hacer que un código ajeno resolviera a SU fila). El único alta
+  real es `complete-onboarding` (service role).
+- `src/lib/rbac.js` gana `ASSIGNABLE_ROLES`; `src/lib/rbac.test.js` falla si
+  difiere de `_joinRules.ts`.
+
+**Ya cumplía, verificado leyendo el código:** quien crea un negocio queda
+`business_admin` de SU negocio (nunca `admin`; el dueño de plataforma conserva
+`admin` por `rolePatchFor`, intacto); toda entidad de negocio lleva la forma
+`$and[data.business_id, rol]` + rama admin en las cuatro operaciones; el tenant
+se re-deriva en el servidor (`guardedEntityWrite`, `export-business-data`,
+`delete-account`); `User.role`/`business_id` siguen con candado de campo.
+
+**Pruebas:** `npm test` (node, 5: reglas de verificación y drift de roles) y
+`deno test base44/tests/` (5: reglas de aprobación). Ambas corren en CI
+(`ci.yml`, job `deno` nuevo). `deno lint base44/functions` **no** se añadió a CI:
+falla de antemano por `no-import-prefix` en todas las funciones.
+
+### No se pudo verificar
+
+- Nada corrió contra Base44 en vivo: ni el registro real con código, ni el login
+  de una cuenta sin verificar (la regex depende del texto del mensaje del
+  servidor: si Base44 lo cambia, ese login vuelve a mostrar el error crudo), ni
+  una aprobación real, ni que un `User.update` con service role de
+  `pending_business_id` no se cuelgue (el `User` sigue sin bloque `rls` de
+  entidad; el campo nuevo solo lleva candado de campo, como `business_id`).
+- Si `User.filter({pending_business_id})` con service role devuelve lo esperado.
+- Sesión de navegador como solicitante pendiente y como `business_admin`.
+- `deno check` de las funciones: 6 errores de tipos, los mismos que antes del
+  cambio (el repo no corre `deno check` en CI).
+
+### Orden de despliegue
+
+1. **`npm run deploy:entities`** (destructivo: pide escribir `CtrlHQ`). Primero,
+   porque sin `User.pending_business_id` en el esquema desplegado Base44 lo
+   descarta en silencio y `join` parecería funcionar sin registrar nada. Lleva
+   también el cambio de `Business.create`.
+2. **`npm run deploy`** (funciones: `complete-onboarding`, `manage-member`,
+   `delete-account`). Con las funciones nuevas y el sitio viejo, el botón
+   "Unirme" del cliente viejo esperaría un `Business` en la respuesta y se
+   quedaría sin acceso: por eso el sitio va enseguida.
+3. **`npm run deploy:site`** (mergear no deploya). Comprobar por contenido: llamar
+   `complete-onboarding` con `{"mode":"status"}` autenticado (`unknown`/`mode
+   debe ser` con el texto viejo = código viejo; si la respuesta trae `build`
+   `2026-09-30.join-request.1`, llegó) y buscar "Solicitud enviada" en el bundle.
+4. Lo que **ya no aplica** tras el paso 2: cualquiera que se hubiera unido antes
+   conserva su acceso (no se migra nada); solo cambia el alta nueva.

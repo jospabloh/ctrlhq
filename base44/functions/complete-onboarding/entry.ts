@@ -13,7 +13,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 // (Deliberately paraphrased rather than quoting the old string: a comment
 // containing it makes `grep` report the guard as still present, which cost a
 // few minutes of double-checking the first time.)
-const BUILD = "2026-09-10.single-tenant.1";
+const BUILD = "2026-09-30.join-request.1";
 
 // Onboarding "Safe function" (STANDARD.md Modules 2 & 3): the ONLY place a
 // user's role/business_id are ever set. Runs the actual writes as service
@@ -26,8 +26,15 @@ const BUILD = "2026-09-10.single-tenant.1";
 // mode "create": the caller becomes business_admin of a brand-new Business
 // (billing_status starts "trial" — Mission Control's unified lifecycle cron
 // takes it from there; this function never touches billing_status again).
-// mode "join": the caller redeems an existing business's invite_code and
-// becomes staff.
+// mode "join": the caller redeems an existing business's invite_code. That
+// does NOT grant access any more (2026-09-30): it only records a PENDING
+// request (User.pending_business_id). Until a business_admin of that business
+// approves it — choosing the role — from Cuenta > Miembros (manage-member's
+// "approve"), the caller has no business_id and sees no data. No path in this
+// function writes business_id/role for a joiner.
+// mode "cancel_join": the caller withdraws their own pending request.
+// mode "status": what the onboarding screen needs to survive a reload —
+// whether a request is pending (and for which business) or already approved.
 
 // The platform owner (role "admin") keeps that role when they join a tenant —
 // they get a business_id and nothing else. Two reasons:
@@ -84,21 +91,63 @@ Deno.serve(async (req) => {
     if (!user) {
       return Response.json({ message: "Unauthorized" }, { status: 401 });
     }
+    const { mode, businessName, inviteCode } = await req.json();
+
+    // Fresh read of the caller: the cached session (auth.me) can lag behind
+    // what is stored, and both decisions below (already in a business? already
+    // waiting on one?) must come from the stored record.
+    const fresh = await base44.asServiceRole.entities.User.get(user.id).catch(() => null);
+    const currentBusinessId = fresh?.business_id || user.business_id;
+    const pendingBusinessId: string | null = fresh?.pending_business_id || null;
+
+    if (mode === "status") {
+      if (currentBusinessId) return Response.json({ hasBusiness: true, pending: null, build: BUILD });
+      if (!pendingBusinessId) return Response.json({ hasBusiness: false, pending: null, build: BUILD });
+      const pendingBusiness = await base44.asServiceRole.entities.Business.get(pendingBusinessId).catch(() => null);
+      if (!pendingBusiness) {
+        // The business was deleted while the request waited: drop the request
+        // so the person can start over instead of waiting forever.
+        await withTimeout(
+          base44.asServiceRole.entities.User.update(user.id, { pending_business_id: null }),
+          25_000,
+          "Limpiar tu solicitud"
+        );
+        return Response.json({ hasBusiness: false, pending: null, build: BUILD });
+      }
+      return Response.json({ hasBusiness: false, pending: { businessName: pendingBusiness.name }, build: BUILD });
+    }
+
+    if (mode === "cancel_join") {
+      if (pendingBusinessId) {
+        await withTimeout(
+          base44.asServiceRole.entities.User.update(user.id, { pending_business_id: null }),
+          25_000,
+          "Cancelar tu solicitud"
+        );
+      }
+      return Response.json({ ok: true, build: BUILD });
+    }
+
     // One user, one tenant. A caller who already has a business_id cannot
     // create or join another: the tenant picker that used to let them move
     // between businesses is gone, so a second business would strand the first
     // with no way back. Leaving a tenant is manage-member's "remove", run by
     // that tenant's own admin.
-    if (user.business_id) {
+    if (currentBusinessId) {
       return Response.json(
         { message: "Ya perteneces a un negocio. Pide a un administrador que te dé de baja antes de unirte a otro." },
         { status: 409 }
       );
     }
 
-    const { mode, businessName, inviteCode } = await req.json();
-
     if (mode === "create") {
+      // A waiting joiner cannot also create a business: cancel the request first.
+      if (pendingBusinessId) {
+        return Response.json(
+          { message: "Tienes una solicitud pendiente de aprobación. Cancélala antes de crear un negocio." },
+          { status: 409 }
+        );
+      }
       const name = (businessName || "").trim();
       if (!name) {
         return Response.json({ message: "El nombre del negocio es obligatorio." }, { status: 400 });
@@ -142,18 +191,26 @@ Deno.serve(async (req) => {
       if (!business) {
         return Response.json({ message: "Código de invitación inválido." }, { status: 404 });
       }
-      await withTimeout(
-        base44.asServiceRole.entities.User.update(user.id, {
-          ...rolePatchFor(user, "staff"),
-          business_id: business.id,
-        }),
-        25_000,
-        "La asignación de tu negocio a tu cuenta"
-      );
-      return Response.json({ business, build: BUILD });
+      if (pendingBusinessId && pendingBusinessId !== business.id) {
+        return Response.json(
+          { message: "Ya tienes una solicitud pendiente en otro negocio. Cancélala antes de pedir unirte a este." },
+          { status: 409 }
+        );
+      }
+      // Idempotent for the same business (double click, retry after a reload).
+      if (!pendingBusinessId) {
+        await withTimeout(
+          base44.asServiceRole.entities.User.update(user.id, { pending_business_id: business.id }),
+          25_000,
+          "Registrar tu solicitud"
+        );
+      }
+      // Deliberately NOT returning the Business record: it carries the invite
+      // code and license fields, and the caller has no access yet.
+      return Response.json({ pending: { businessName: business.name }, build: BUILD });
     }
 
-    return Response.json({ message: "mode debe ser 'create' o 'join'." }, { status: 400 });
+    return Response.json({ message: "mode debe ser 'create', 'join', 'cancel_join' o 'status'." }, { status: 400 });
   } catch (error) {
     return Response.json({ message: error.message }, { status: 500 });
   }

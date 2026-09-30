@@ -1,17 +1,22 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, KeyRound, LifeBuoy, Loader2 } from "lucide-react";
+import { Building2, Clock, KeyRound, LifeBuoy, Loader2 } from "lucide-react";
 
 // The one screen between "logged in" and "has a tenant" (Module 2): every
-// CtrlHQ user either creates a Business (becomes business_admin) or joins
-// one with an invite code (becomes staff). Both go through the
-// complete-onboarding Safe function — see its header comment for why this
-// isn't a plain auth.updateMe() call.
+// CtrlHQ user either creates a Business (becomes business_admin) or asks to
+// join one with its invite code. Joining is a REQUEST: the person has no
+// access until a business_admin approves it (and picks their role) from
+// Cuenta > Miembros. The pending state lives on the server, so this screen
+// rebuilds it from complete-onboarding's "status" after any reload. Both go
+// through the complete-onboarding Safe function — see its header comment for
+// why this isn't a plain auth.updateMe() call.
+const POLL_MS = 15000;
+
 export default function Onboarding() {
   const { user, checkUserAuth, refreshBusiness } = useAuth();
   const [businessName, setBusinessName] = useState("");
@@ -20,6 +25,60 @@ export default function Onboarding() {
   const [error, setError] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
   const [errorIsUnexpected, setErrorIsUnexpected] = useState(false);
+  // { businessName } while a join request waits for approval, else null.
+  const [pending, setPending] = useState(null);
+  const [checking, setChecking] = useState(true);
+
+  // Asks the server where this person stands. Approved -> refresh the session
+  // so App.jsx lets them in; still pending -> keep the waiting screen.
+  // AuthProvider recreates checkUserAuth on every render; keep the latest in a
+  // ref so syncStatus stays stable and the polling effect below does not
+  // restart (or loop) on each re-render.
+  const checkUserAuthRef = useRef(checkUserAuth);
+  checkUserAuthRef.current = checkUserAuth;
+
+  const syncStatus = useCallback(async () => {
+    try {
+      const res = await base44.functions.invoke("complete-onboarding", { mode: "status" });
+      const data = res?.data ?? res;
+      if (data?.hasBusiness) {
+        // checkUserAuth also loads the Business for the refreshed user.
+        await checkUserAuthRef.current();
+        return;
+      }
+      setPending(data?.pending || null);
+    } catch (err) {
+      // A failed status check must not trap anyone on a blank screen: they
+      // can still use the forms below (the server re-validates everything).
+      console.error("[Onboarding] status check failed", err);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncStatus();
+  }, [syncStatus]);
+
+  useEffect(() => {
+    if (!pending) return undefined;
+    const timer = setInterval(syncStatus, POLL_MS);
+    return () => clearInterval(timer);
+  }, [pending, syncStatus]);
+
+  const cancelRequest = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await base44.functions.invoke("complete-onboarding", { mode: "cancel_join" });
+      setPending(null);
+      setInviteCode("");
+    } catch (err) {
+      setError(err?.data?.message || err?.originalError?.response?.data?.message || "No se pudo cancelar la solicitud. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // TEMPORARY diagnostic wrapper (systematic-debugging: gather evidence before
   // another blind fix attempt) — labels which of the three awaited calls
@@ -41,11 +100,17 @@ export default function Onboarding() {
     setLoading(true);
     try {
       try {
-        await base44.functions.invoke("complete-onboarding", {
+        const res = await base44.functions.invoke("complete-onboarding", {
           mode,
           businessName: mode === "create" ? businessName : undefined,
           inviteCode: mode === "join" ? inviteCode : undefined,
         });
+        if (mode === "join") {
+          // Request recorded; no access yet. Show the waiting screen.
+          const data = res?.data ?? res;
+          setPending(data?.pending || { businessName: "" });
+          return;
+        }
       } catch (err) {
         console.error("[Onboarding] complete-onboarding invoke failed", err);
         setErrorDetail(`[complete-onboarding] ${describeError(err)}`);
@@ -100,6 +165,40 @@ export default function Onboarding() {
     );
     return `mailto:soporte@acaciaco.com.mx?subject=${subject}&body=${body}`;
   };
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" aria-label="Cargando" />
+      </div>
+    );
+  }
+
+  if (pending) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-sm p-8 text-center space-y-4">
+          <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+            <Clock className="h-6 w-6 text-primary" aria-hidden="true" />
+          </div>
+          <h1 className="font-heading text-xl font-semibold">Solicitud enviada</h1>
+          <p className="text-sm text-muted-foreground">
+            Estamos esperando la aprobación del administrador
+            {pending.businessName ? <> de <strong className="text-foreground">{pending.businessName}</strong></> : null}.
+            Cuando la apruebe podrás entrar; esta pantalla se actualiza sola.
+          </p>
+          {error && <p className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</p>}
+          <div className="flex flex-col gap-2 pt-2">
+            <Button className="h-11" onClick={syncStatus} disabled={loading}>Revisar ahora</Button>
+            <Button variant="outline" className="h-11" onClick={cancelRequest} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Cancelar solicitud
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
@@ -178,7 +277,7 @@ export default function Onboarding() {
               }}
             >
             <p className="text-sm text-muted-foreground">
-              Pide el código de invitación al administrador de tu negocio y únete como personal.
+              Pide el código de invitación al administrador de tu negocio y solicita unirte. El administrador debe aprobar tu solicitud para darte acceso.
             </p>
             <div>
               <Label>Código de invitación</Label>
@@ -194,7 +293,7 @@ export default function Onboarding() {
             </div>
             <Button type="submit" className="w-full h-11" disabled={loading || !inviteCode.trim()}>
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Unirme
+              Solicitar unirme
             </Button>
             </form>
           </TabsContent>

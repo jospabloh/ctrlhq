@@ -18,9 +18,22 @@ jobs:
       # Includes validate:rls (STANDARD.md Module 4) — see package.json.
       - run: npm run lint
       - run: npm run build
+      # Unit tests for pure client helpers (email-verification rules, rbac drift).
+      - run: npm test
       # `npm run typecheck` is intentionally NOT run here: it fails on this
       # repo's pre-existing shadcn/ui scaffold (component .jsx files aren't
       # typed to accept the props every page already passes them — children,
       # htmlFor, className, etc.) independent of any app-standard work. Confirmed
       # by running it on the pre-standard commit — same failures, unrelated
       # files. Fix that as its own task before wiring typecheck into CI.
+
+  deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # Pure-logic tests only (no remote imports): join-request rules.
+      - run: deno lint base44/tests
+      - run: deno test base44/tests/

@@ -22,6 +22,12 @@ export const ROLE_LABELS = {
   [ROLES.STAFF]: "Personal",
 };
 
+// Roles a business_admin may hand out when approving a join request or
+// changing a teammate's role. Never ADMIN (platform tier). Mirrored by
+// ASSIGNABLE_ROLES in base44/functions/manage-member/_joinRules.ts; a unit
+// test fails if the two drift.
+export const ASSIGNABLE_ROLES = [ROLES.BUSINESS_ADMIN, ROLES.STAFF];
+
 export function isPlatformAdmin(user) {
   return user?.role === ROLES.ADMIN;
 }
