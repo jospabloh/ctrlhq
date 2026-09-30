@@ -1,67 +1,46 @@
 {
-  // SECURITY: role/business_id carry FIELD-LEVEL write RLS locking them to
-  // role `admin` — the tier the service role evaluates as (it does NOT bypass
-  // RLS; it is evaluated as an admin principal). Without this lock, ANY
-  // authenticated user could call auth.updateMe({role:"admin"}) to become a
-  // platform-wide admin (every tenant entity carries an unscoped
-  // user_condition:{role:"admin"} branch), or updateMe({business_id:"<any id>"})
-  // to take over another tenant's data without its invite code. All legitimate
-  // changes flow through the service-role functions complete-onboarding and
-  // manage-member.
-  //
-  // DELIBERATELY NO ENTITY-LEVEL "rls" BLOCK — do not add one.
-  // The built-in User is not a normal entity; Base44 manages it through the
-  // app's authentication system (its own MCP tooling refuses to write it:
-  // "Users are managed through the app's authentication system"). An
-  // entity-level rls block here does NOT behave like it does on a normal
-  // entity — it silently breaks writes to User.
-  //
-  // This cost a full debugging session to find. Symptom: "Crear negocio" on
-  // /onboarding failed with HTTP 500 and a completely EMPTY response body,
-  // while Business.create in the very same function succeeded (orphaned
-  // Business rows with created_by_id: service_* and nobody attached). The
-  // empty body is the tell: a thrown error would have been caught by
-  // complete-onboarding's own try/catch and returned as {message}, so the
-  // request never returned at all — it hung and the runtime killed it.
-  //
-  // Mechanism: this entity previously carried an entity-level rls block whose
-  // read/update rules included a {{user.data.business_id}} branch. The service
-  // principal has NO User row of its own (confirmed: the app has exactly one
-  // User record, is_service:false), so that template cannot resolve for it.
-  // Business.create kept working because Business's *create* rule is
-  // $or[{role:admin},{created_by_id:{{user.id}}}] — no {{user.data.*}} at all,
-  // and {{user.id}} comes from the token rather than from an entity read.
-  //
-  // stockflow — the portfolio's reference standard app, whose equivalent
-  // onboarding (business:createBusinessSafe) does the identical
-  // asServiceRole.entities.User.update(user.id, {business_id, role}) and
-  // works — also carries field-level RLS only, with no entity-level block.
-  // Match it. Member listing that needs to span a tenant goes through a
-  // service-role function (stockflow's permissions:getTeamMembers), not a
-  // client-side entity read gated by RLS on User.
   "name": "User",
   "type": "object",
   "properties": {
     "role": {
       "type": "string",
-      "enum": ["admin", "business_admin", "staff"],
+      "enum": [
+        "admin",
+        "business_admin",
+        "staff"
+      ],
       "default": "staff",
-      "description": "Rol de CtrlHQ (distinto del rol operador de Mission Control: owner|admin|viewer en members). admin = dueño de plataforma ACACIA (rama service-role de RLS); business_admin = dueño/gerente del negocio; staff = personal del negocio.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "description": "Rol de CtrlHQ (distinto del rol operador de Mission Control: owner|admin|viewer en members). admin = due\u00f1o de plataforma ACACIA (rama service-role de RLS); business_admin = due\u00f1o/gerente del negocio; staff = personal del negocio.",
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "business_id": {
       "type": "string",
-      "description": "Tenant al que pertenece este usuario. Solo lo escriben las Base44 functions complete-onboarding / manage-member (service role) tras validar la invitación — nunca directo desde el cliente, para cerrar el bypass de auth.updateMe.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "description": "Tenant al que pertenece este usuario. Solo lo escriben las Base44 functions complete-onboarding / manage-member (service role) tras validar la invitaci\u00f3n \u2014 nunca directo desde el cliente, para cerrar el bypass de auth.updateMe.",
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "pending_business_id": {
       "type": "string",
-      "description": "Solicitud de unión pendiente (Business.id cuyo invite_code canjeó este usuario). SOLO gobierna la escritura: la escribe complete-onboarding (join / cancel_join) y la limpian manage-member (approve / reject / remove) y delete-account, todas con service role. Bloqueado a role admin porque no concede acceso por sí mismo: ninguna regla RLS lo compara, y el acceso solo nace cuando un business_admin aprueba y manage-member escribe business_id y role. Si se quitara el bloqueo, un usuario podría falsear una solicitud ante un negocio que no le corresponde y engañar al listado de solicitudes de su administrador. Vacío = sin solicitud.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "description": "Solicitud de uni\u00f3n pendiente (Business.id cuyo invite_code canje\u00f3 este usuario). SOLO gobierna la escritura: la escribe complete-onboarding (join / cancel_join) y la limpian manage-member (approve / reject / remove) y delete-account, todas con service role. Bloqueado a role admin porque no concede acceso por s\u00ed mismo: ninguna regla RLS lo compara, y el acceso solo nace cuando un business_admin aprueba y manage-member escribe business_id y role. Si se quitara el bloqueo, un usuario podr\u00eda falsear una solicitud ante un negocio que no le corresponde y enga\u00f1ar al listado de solicitudes de su administrador. Vac\u00edo = sin solicitud.",
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     }
   },
-  // Matches stockflow: no required fields. `role` carries a default instead, so
-  // a brand-new signup is a `staff` with no business until complete-onboarding
-  // grants one.
   "required": []
 }
