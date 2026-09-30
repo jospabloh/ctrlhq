@@ -97,6 +97,15 @@ Deno.serve(async (req) => {
     // what is stored, and both decisions below (already in a business? already
     // waiting on one?) must come from the stored record.
     const fresh = await base44.asServiceRole.entities.User.get(user.id).catch(() => null);
+    // Write modes must decide from the STORED record. If that read failed,
+    // falling back to the stale session could let a caller who already has a
+    // business/pending request create or join another: fail instead.
+    if (!fresh && (mode === "create" || mode === "join")) {
+      return Response.json(
+        { message: "No pudimos verificar tu cuenta. Intenta de nuevo en unos segundos." },
+        { status: 503 }
+      );
+    }
     const currentBusinessId = fresh?.business_id || user.business_id;
     const pendingBusinessId: string | null = fresh?.pending_business_id || null;
 

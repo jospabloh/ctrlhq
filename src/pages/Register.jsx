@@ -52,7 +52,10 @@ export default function Register() {
           email={email}
           password={password}
           onVerified={(r) =>
-            r?.needsLogin ? navigate("/login", { replace: true }) : (window.location.href = safeReturnTo())
+            r?.needsLogin ? navigate(
+                  "/login" + (safeReturnTo() !== "/" ? "?returnTo=" + encodeURIComponent(safeReturnTo()) : ""),
+                  { replace: true }
+                ) : (window.location.href = safeReturnTo())
           }
           onCancel={() => {
             setShowOtp(false);

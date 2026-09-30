@@ -83,6 +83,18 @@ Deno.serve(async (req) => {
         await base44.asServiceRole.entities.User.update(memberId, { pending_business_id: null });
         return Response.json({ message: "Esta persona ya pertenece a un negocio." }, { status: 409 });
       }
+      // Best-effort conditional write: re-read the target's STORED request
+      // right before updating and abort if it no longer points at this
+      // business (rejected/cancelled/moved meanwhile). Base44 has no atomic
+      // conditional write, so a small race window remains between this read
+      // and the update; it only narrows the window, it cannot close it.
+      const recheck = await base44.asServiceRole.entities.User.get(memberId).catch(() => null);
+      if (!recheck || recheck.pending_business_id !== gate.businessId || recheck.business_id) {
+        return Response.json(
+          { message: "La solicitud cambió mientras se resolvía. Actualiza la lista e intenta de nuevo." },
+          { status: 409 }
+        );
+      }
       // The platform owner keeps "admin" (writing role away from it hangs; see
       // complete-onboarding's rolePatchFor). Everyone else gets the chosen role.
       const updated = await base44.asServiceRole.entities.User.update(memberId, {

@@ -927,3 +927,14 @@ falla de antemano por `no-import-prefix` en todas las funciones.
    `2026-09-30.join-request.1`, llegó) y buscar "Solicitud enviada" en el bundle.
 4. Lo que **ya no aplica** tras el paso 2: cualquiera que se hubiera unido antes
    conserva su acceso (no se migra nada); solo cambia el alta nueva.
+
+### Seguimiento de la revisión de Codex (2026-09-30)
+
+- `complete-onboarding`: en `create`/`join`, si la relectura del `User` con
+  service role falla, responde 503 en vez de decidir con `auth.me()` cacheado.
+- `manage-member` `approve`: relee el `pending_business_id` guardado justo antes
+  de escribir y responde 409 si ya no apunta al negocio del admin. Es
+  best-effort: Base44 no tiene escritura condicional atómica, queda una ventana
+  pequeña.
+- `Register.jsx`: si tras verificar el login automático falla, va a `/login`
+  conservando `returnTo` saneado con `safeReturnTo` (`src/lib/authReturnTo.js`).
