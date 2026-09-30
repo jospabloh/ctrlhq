@@ -8,62 +8,120 @@
     },
     "invite_code": {
       "type": "string",
-      "description": "Código para que el personal se una al negocio; solo lo gestiona complete-onboarding"
+      "description": "C\u00f3digo para que el personal se una al negocio; solo lo gestiona complete-onboarding"
     },
     "billing_status": {
       "type": "string",
-      "enum": ["trial", "active", "view_only", "suspended"],
+      "enum": [
+        "trial",
+        "active",
+        "view_only",
+        "suspended"
+      ],
       "default": "trial",
       "description": "Escrito UNICAMENTE por el cron de licenciamiento de Mission Control (runUnifiedLifecycleForApp). CtrlHQ solo lee este campo.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "license_plan": {
       "type": "string",
       "description": "Escrito por Mission Control.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "licensed_user_limit": {
       "type": "number",
       "description": "Escrito por Mission Control.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "trial_end_at": {
       "type": "string",
       "format": "date-time",
       "description": "Escrito por Mission Control.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     },
     "license_expires_at": {
       "type": "string",
       "format": "date-time",
       "description": "Escrito por Mission Control.",
-      "rls": { "write": { "user_condition": { "role": "admin" } } }
+      "rls": {
+        "write": {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      }
     }
   },
-  "required": ["name", "billing_status"],
-  // RLS (Module 4): create is admin/service-role only (self-service onboarding
-  // goes through base44/functions/complete-onboarding); read/update scope
-  // to the caller's own tenant via {{user.data.business_id}}; license fields
-  // are field-locked to admin (Mission Control) regardless of this entity
-  // update rule (Module 1).
+  "required": [
+    "name",
+    "billing_status"
+  ],
   "rls": {
-    // Solo admin (el rol de servicio evalúa como admin): el único camino de
-    // alta es complete-onboarding. La rama created_by_id que había aquí dejaba
-    // a cualquier usuario crear un Business por SDK con el invite_code que
-    // quisiera (y hacer que un código ajeno resolviera a SU fila).
-    "create": { "user_condition": { "role": "admin" } },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
     "read": {
       "$or": [
-        { "id": "{{user.data.business_id}}" },
-        { "user_condition": { "role": "admin" } }
+        {
+          "id": "{{user.data.business_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
       ]
     },
     "update": {
       "$or": [
-        { "$and": [{ "id": "{{user.data.business_id}}" }, { "user_condition": { "role": "business_admin" } }] },
-        { "user_condition": { "role": "admin" } }
+        {
+          "$and": [
+            {
+              "id": "{{user.data.business_id}}"
+            },
+            {
+              "user_condition": {
+                "role": "business_admin"
+              }
+            }
+          ]
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
       ]
     },
-    "delete": { "user_condition": { "role": "admin" } }
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
   }
 }
