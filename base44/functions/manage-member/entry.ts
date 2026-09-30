@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
-import { decidePendingAccess, isAssignableRole } from "./_joinRules.ts";
+import { decidePendingAccess, isAssignableRole, lostAllAdmins, wouldLeaveNoAdmin } from "./_joinRules.ts";
 
 // Safe function backing Cuenta:manage_members (Module 7 member management +
 // Module 3's server-side re-check). Only a business_admin of the SAME
@@ -111,7 +111,13 @@ Deno.serve(async (req) => {
 
     const member = await base44.asServiceRole.entities.User.get(memberId);
     if (!member) return Response.json({ message: "Miembro no encontrado." }, { status: 404 });
-    if (!isPlatformAdmin && member.business_id !== caller.business_id) {
+    // `!caller.business_id` matters: without it two people with NO business
+    // would compare equal and pass this gate.
+    if (!isPlatformAdmin && (!caller.business_id || member.business_id !== caller.business_id)) {
+      return Response.json({ message: "No autorizado." }, { status: 403 });
+    }
+    if (!isPlatformAdmin && member.role === "admin") {
+      // The platform tier is not something a business's own admin can touch.
       return Response.json({ message: "No autorizado." }, { status: 403 });
     }
     if (!isPlatformAdmin && member.id === caller.id) {
@@ -125,7 +131,21 @@ Deno.serve(async (req) => {
       // One user, one tenant: `User.role` IS the durable record. There is no
       // second copy of it to keep in sync any more — the `Membership` entity
       // that used to hold one went away with the tenant picker.
+      const tenantMembers = member.business_id
+        ? await base44.asServiceRole.entities.User.filter({ business_id: member.business_id })
+        : [];
+      if (wouldLeaveNoAdmin(tenantMembers, member, role)) {
+        return Response.json({ message: "El negocio no puede quedarse sin administrador." }, { status: 409 });
+      }
       const updated = await base44.asServiceRole.entities.User.update(memberId, { role });
+      // Recount: a concurrent demotion can slip past the pre-check; undo ours.
+      if (member.business_id) {
+        const after = await base44.asServiceRole.entities.User.filter({ business_id: member.business_id });
+        if (lostAllAdmins(after, member.role === "business_admin")) {
+          await base44.asServiceRole.entities.User.update(memberId, { role: member.role });
+          return Response.json({ message: "El negocio no puede quedarse sin administrador." }, { status: 409 });
+        }
+      }
       return Response.json({ member: updated });
     }
 
@@ -134,11 +154,24 @@ Deno.serve(async (req) => {
       // separate membership record that could grant a way back in. The user
       // lands back on `/onboarding` and can create or join a business again.
       // The platform owner is never demoted here (see complete-onboarding).
+      const tenantMembers = member.business_id
+        ? await base44.asServiceRole.entities.User.filter({ business_id: member.business_id })
+        : [];
+      if (wouldLeaveNoAdmin(tenantMembers, member, null)) {
+        return Response.json({ message: "El negocio no puede quedarse sin administrador." }, { status: 409 });
+      }
       const updated = await base44.asServiceRole.entities.User.update(memberId, {
         ...(member.role === "admin" ? {} : { role: "staff" }),
         business_id: null,
         pending_business_id: null,
       });
+      if (member.business_id) {
+        const after = await base44.asServiceRole.entities.User.filter({ business_id: member.business_id });
+        if (lostAllAdmins(after, member.role === "business_admin")) {
+          await base44.asServiceRole.entities.User.update(memberId, { role: member.role, business_id: member.business_id });
+          return Response.json({ message: "El negocio no puede quedarse sin administrador." }, { status: 409 });
+        }
+      }
       return Response.json({ member: updated });
     }
 

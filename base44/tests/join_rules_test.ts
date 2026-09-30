@@ -39,3 +39,22 @@ Deno.test("the platform admin resolves any request, using the stored business", 
   );
   assertEquals(decidePendingAccess({ role: "admin" }, { pending_business_id: null }).ok, false);
 });
+
+Deno.test("last-admin guard: pre-check and recount", async () => {
+  const { wouldLeaveNoAdmin, lostAllAdmins, countTenantAdmins } = await import("../functions/manage-member/_joinRules.ts");
+  const admin = { role: "business_admin" };
+  const staff = { role: "staff" };
+  // Sole admin cannot be demoted or removed; staff can always be changed.
+  assert(wouldLeaveNoAdmin([admin, staff], admin, "staff"));
+  assert(wouldLeaveNoAdmin([admin, staff], admin, null));
+  assert(!wouldLeaveNoAdmin([admin, staff], staff, null));
+  assert(!wouldLeaveNoAdmin([admin, staff], admin, "business_admin"));
+  // Two admins: one may go. The platform owner as member counts as present.
+  assert(!wouldLeaveNoAdmin([admin, admin], admin, "staff"));
+  assert(!wouldLeaveNoAdmin([admin, { role: "admin" }], admin, null));
+  assertEquals(countTenantAdmins([admin, staff, { role: "admin" }]), 2);
+  // Recount only blames a write that took an admin away.
+  assert(lostAllAdmins([staff], true));
+  assert(!lostAllAdmins([staff], false));
+  assert(!lostAllAdmins([admin], true));
+});
