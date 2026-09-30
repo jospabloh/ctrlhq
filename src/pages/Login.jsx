@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
+import VerifyEmailStep from "@/components/VerifyEmailStep";
+import { needsEmailVerification } from "@/lib/emailVerification";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 export default function Login() {
@@ -14,6 +16,9 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Cuenta creada pero sin verificar: se abre el paso de código en vez de
+  // mostrar el error crudo de la plataforma.
+  const [verifying, setVerifying] = useState(false);
   // Post-login destination (e.g. the MCP OAuth consent page sends users here
   // with returnTo so the grant flow can resume). Same-origin paths only.
   const returnTo = safeReturnTo();
@@ -23,10 +28,20 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
+      await base44.auth.loginViaEmailPassword(email.trim(), password);
       window.location.href = returnTo;
     } catch (err) {
-      setError(err.message || "Correo o contraseña incorrectos");
+      if (needsEmailVerification(err)) {
+        // Reenviamos el código: el que recibió al registrarse puede haber vencido.
+        try {
+          await base44.auth.resendOtp(email.trim());
+        } catch {
+          /* el paso de código ofrece "Reenviar código" si falla */
+        }
+        setVerifying(true);
+      } else {
+        setError(err.message || "Correo o contraseña incorrectos");
+      }
     } finally {
       setLoading(false);
     }
@@ -35,6 +50,33 @@ export default function Login() {
   const handleGoogle = () => {
     base44.auth.loginWithProvider("google", returnTo);
   };
+
+  if (verifying) {
+    return (
+      <AuthLayout
+        icon={Mail}
+        title="Verifica tu correo"
+        subtitle={`Tu cuenta aún no está verificada. Escribe el código que enviamos a ${email.trim()}`}
+      >
+        <VerifyEmailStep
+          email={email.trim()}
+          password={password}
+          onVerified={(r) => {
+            if (r?.needsLogin) {
+              setVerifying(false);
+              setPassword("");
+            } else {
+              window.location.href = returnTo;
+            }
+          }}
+          onCancel={() => {
+            setVerifying(false);
+            setPassword("");
+          }}
+        />
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout

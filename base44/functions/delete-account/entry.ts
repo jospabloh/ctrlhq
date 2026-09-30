@@ -61,6 +61,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Join requests still waiting on this business would point at nothing.
+    const waiting = await base44.asServiceRole.entities.User.filter({ pending_business_id: businessId });
+    for (const person of waiting) {
+      await base44.asServiceRole.entities.User.update(person.id, { pending_business_id: null });
+    }
+
     await base44.asServiceRole.entities.Business.delete(businessId);
 
     return Response.json({ success: true, deletedCounts, releasedMembers: members.length });

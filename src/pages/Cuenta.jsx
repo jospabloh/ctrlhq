@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { usePermissions } from "@/lib/PermissionContext";
-import { ROLE_LABELS } from "@/lib/rbac";
+import { ROLE_LABELS, ROLES, ASSIGNABLE_ROLES } from "@/lib/rbac";
 import { APP_VERSION, RELEASE_DATE, CHANGELOG } from "@/lib/appConfig";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { AlertTriangle, Download, Loader2, ShieldAlert, Users2 } from "lucide-react";
+import { AlertTriangle, Download, Loader2, ShieldAlert, UserCheck, Users2 } from "lucide-react";
 
 const BILLING_LABELS = {
   trial: "Prueba",
@@ -31,6 +31,10 @@ export default function Cuenta() {
   const { can } = usePermissions();
   const { toast } = useToast();
   const [members, setMembers] = useState([]);
+  // Join requests waiting for this business's admin (see manage-member).
+  const [requests, setRequests] = useState([]);
+  const [requestRoles, setRequestRoles] = useState({});
+  const [resolvingId, setResolvingId] = useState(null);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [confirmName, setConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -40,8 +44,10 @@ export default function Cuenta() {
   const canDangerZone = can("Cuenta:danger_zone");
 
   useEffect(() => {
-    if (canManageMembers && user?.business_id) loadMembers();
-    else setLoadingMembers(false);
+    if (canManageMembers && user?.business_id) {
+      loadMembers();
+      loadRequests();
+    } else setLoadingMembers(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageMembers, user?.business_id]);
 
@@ -54,6 +60,37 @@ export default function Cuenta() {
       console.error(e);
     } finally {
       setLoadingMembers(false);
+    }
+  };
+
+  const loadRequests = async () => {
+    try {
+      const res = await base44.functions.invoke("manage-member", { action: "list_pending" });
+      setRequests(res?.data?.requests ?? []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // The admin CHOOSES the role at approval time; the server checks it against
+  // the assignable whitelist (never the platform admin) and re-reads the stored
+  // request, so nothing here grants access by itself.
+  const resolveRequest = async (requestId, action) => {
+    setResolvingId(requestId);
+    try {
+      await base44.functions.invoke("manage-member", {
+        action,
+        memberId: requestId,
+        role: action === "approve" ? requestRoles[requestId] || ROLES.STAFF : undefined,
+      });
+      toast({ title: action === "approve" ? "Solicitud aprobada" : "Solicitud rechazada" });
+      await Promise.all([loadRequests(), loadMembers()]);
+    } catch (e) {
+      const msg = e?.data?.message || e?.originalError?.response?.data?.message || e?.message;
+      toast({ title: msg || "No se pudo resolver la solicitud", variant: "destructive" });
+      loadRequests();
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -134,7 +171,9 @@ export default function Cuenta() {
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6">
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="members">Miembros</TabsTrigger>
+          <TabsTrigger value="members">
+            Miembros{requests.length > 0 ? ` (${requests.length} por aprobar)` : ""}
+          </TabsTrigger>
           <TabsTrigger value="changelog">Novedades</TabsTrigger>
           {canDangerZone && <TabsTrigger value="danger" className="text-rose-600">Zona de peligro</TabsTrigger>}
         </TabsList>
@@ -185,6 +224,47 @@ export default function Cuenta() {
           ) : loadingMembers ? (
             <div className="p-8 text-center text-muted-foreground">Cargando...</div>
           ) : (
+            <div className="space-y-4">
+            {requests.length > 0 && (
+              <div className="bg-card rounded-xl border border-primary/40 shadow-sm">
+                <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+                  <UserCheck className="w-4 h-4 text-primary" />
+                  <p className="font-semibold text-sm">Solicitudes para unirse ({requests.length})</p>
+                </div>
+                <p className="px-4 pb-3 text-xs text-muted-foreground">
+                  Estas personas usaron el código de invitación. No tienen acceso hasta que las apruebes y elijas su rol.
+                </p>
+                <div className="divide-y divide-border border-t border-border">
+                  {requests.map((r) => (
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                      <div>
+                        <p className="font-medium text-sm">{r.full_name || r.email}</p>
+                        <p className="text-xs text-muted-foreground">{r.email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={requestRoles[r.id] || ROLES.STAFF}
+                          onValueChange={(v) => setRequestRoles((prev) => ({ ...prev, [r.id]: v }))}
+                        >
+                          <SelectTrigger className="w-40" aria-label="Rol al aprobar"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {ASSIGNABLE_ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button size="sm" disabled={resolvingId === r.id} onClick={() => resolveRequest(r.id, "approve")}>
+                          Aprobar
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={resolvingId === r.id} onClick={() => resolveRequest(r.id, "reject")}>
+                          Rechazar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="bg-card rounded-xl border border-border shadow-sm divide-y divide-border">
               {members.map((m) => (
                 <div key={m.id} className="flex items-center justify-between p-4">
@@ -213,6 +293,7 @@ export default function Cuenta() {
                   </div>
                 </div>
               ))}
+            </div>
             </div>
           )}
         </TabsContent>

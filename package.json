@@ -9,6 +9,7 @@
     "lint": "eslint . --quiet && npm run validate:rls && npm run validate:permissions && npm run validate:functions",
     "lint:fix": "eslint . --fix",
     "validate:rls": "node scripts/validate-rls.mjs",
+    "test": "node --test src/lib/emailVerification.test.js src/lib/rbac.test.js",
     "typecheck": "tsc -p ./jsconfig.json",
     "release": "node scripts/release.mjs",
     "preview": "vite preview",

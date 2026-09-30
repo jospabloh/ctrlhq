@@ -53,6 +53,11 @@
       "type": "string",
       "description": "Tenant al que pertenece este usuario. Solo lo escriben las Base44 functions complete-onboarding / manage-member (service role) tras validar la invitación — nunca directo desde el cliente, para cerrar el bypass de auth.updateMe.",
       "rls": { "write": { "user_condition": { "role": "admin" } } }
+    },
+    "pending_business_id": {
+      "type": "string",
+      "description": "Solicitud de unión pendiente (Business.id cuyo invite_code canjeó este usuario). SOLO gobierna la escritura: la escribe complete-onboarding (join / cancel_join) y la limpian manage-member (approve / reject / remove) y delete-account, todas con service role. Bloqueado a role admin porque no concede acceso por sí mismo: ninguna regla RLS lo compara, y el acceso solo nace cuando un business_admin aprueba y manage-member escribe business_id y role. Si se quitara el bloqueo, un usuario podría falsear una solicitud ante un negocio que no le corresponde y engañar al listado de solicitudes de su administrador. Vacío = sin solicitud.",
+      "rls": { "write": { "user_condition": { "role": "admin" } } }
     }
   },
   // Matches stockflow: no required fields. `role` carries a default instead, so

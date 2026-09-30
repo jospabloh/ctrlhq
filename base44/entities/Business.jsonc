@@ -41,18 +41,17 @@
     }
   },
   "required": ["name", "billing_status"],
-  // RLS (Module 4): create allows admin OR the creating user (self-service
-  // onboarding — see base44/functions/complete-onboarding); read/update scope
+  // RLS (Module 4): create is admin/service-role only (self-service onboarding
+  // goes through base44/functions/complete-onboarding); read/update scope
   // to the caller's own tenant via {{user.data.business_id}}; license fields
   // are field-locked to admin (Mission Control) regardless of this entity
   // update rule (Module 1).
   "rls": {
-    "create": {
-      "$or": [
-        { "user_condition": { "role": "admin" } },
-        { "created_by_id": "{{user.id}}" }
-      ]
-    },
+    // Solo admin (el rol de servicio evalúa como admin): el único camino de
+    // alta es complete-onboarding. La rama created_by_id que había aquí dejaba
+    // a cualquier usuario crear un Business por SDK con el invite_code que
+    // quisiera (y hacer que un código ajeno resolviera a SU fila).
+    "create": { "user_condition": { "role": "admin" } },
     "read": {
       "$or": [
         { "id": "{{user.data.business_id}}" },
