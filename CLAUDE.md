@@ -938,3 +938,25 @@ falla de antemano por `no-import-prefix` en todas las funciones.
   pequeña.
 - `Register.jsx`: si tras verificar el login automático falla, va a `/login`
   conservando `returnTo` saneado con `safeReturnTo` (`src/lib/authReturnTo.js`).
+
+## `Business.tenant_id`: la regla por `id` no empareja al dueño (2026-10-01)
+
+Probado en vivo con cuentas nuevas: `Business.read` con `{"id": "{{user.data.business_id}}"}`
+devolvía `[]` (lista) y 404 (por id) **al propio dueño**, aunque `User.business_id`
+apuntaba a esa fila. Así que Cuenta mostraba "—" y el código de invitación nunca
+aparecía, lo que dejaba la unión por solicitud sin forma de compartir el código.
+Una regla `data.<campo>` contra la misma plantilla `{{user.data.business_id}}` sí
+empareja (se comprobó con una entidad sonda), así que el negocio lleva ahora una
+copia en texto de su propio id:
+
+- `Business.tenant_id` (campo nuevo, `rls.write` solo admin: si un `business_admin`
+  pudiera editarlo lo apuntaría al id de otro negocio y leería su fila).
+- `Business.read`/`update` aceptan `data.tenant_id == {{user.data.business_id}}` además
+  de la rama `id` anterior (se conserva) y la de admin.
+- `complete-onboarding` `create` lo escribe con service role, dentro del `try`, así que
+  si falla se revierte el `Business`. `BUILD` = `2026-10-01.tenant-id.1`.
+- Los negocios que ya existían se rellenaron una vez con `tenant_id = id`
+  (los `[HUERFANO - BORRAR]` no, porque nadie pertenece a ellos).
+
+**Antes de dar por buena cualquier regla `id` nueva, léela como el dueño de un negocio
+recién creado.** Que el esquema la acepte no prueba que empareje.

@@ -13,7 +13,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.20";
 // (Deliberately paraphrased rather than quoting the old string: a comment
 // containing it makes `grep` report the guard as still present, which cost a
 // few minutes of double-checking the first time.)
-const BUILD = "2026-09-30.join-request.1";
+const BUILD = "2026-10-01.tenant-id.1";
 
 // Onboarding "Safe function" (STANDARD.md Modules 2 & 3): the ONLY place a
 // user's role/business_id are ever set. Runs the actual writes as service
@@ -167,6 +167,15 @@ Deno.serve(async (req) => {
         invite_code: randomInviteCode(),
       });
       try {
+        // Business.read/update match the owner on `data.tenant_id`, not on `id`:
+        // an `id` rule comes back empty for the owner (see Business.jsonc).
+        // Written here, with the service role, because the field is locked to
+        // admin writes. Inside the try so a failure rolls the Business back.
+        await withTimeout(
+          base44.asServiceRole.entities.Business.update(business.id, { tenant_id: business.id }),
+          25_000,
+          "Registrar el identificador de tu negocio"
+        );
         await withTimeout(
           base44.asServiceRole.entities.User.update(user.id, {
             ...rolePatchFor(user, "business_admin"),
@@ -187,7 +196,7 @@ Deno.serve(async (req) => {
         } catch (_) { /* keep reporting the original failure */ }
         throw error;
       }
-      return Response.json({ business, build: BUILD });
+      return Response.json({ business: { ...business, tenant_id: business.id }, build: BUILD });
     }
 
     if (mode === "join") {
