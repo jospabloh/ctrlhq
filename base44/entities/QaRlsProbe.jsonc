@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "name": "QaRlsProbe",
+  "description": "Sonda temporal de QA 2026-10-01; borrar.",
+  "properties": {
+    "label": {
+      "type": "string"
+    },
+    "tenant_ref": {
+      "type": "string"
+    }
+  },
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "$or": [
+        {
+          "id": "{{user.data.business_id}}"
+        },
+        {
+          "data.tenant_ref": "{{user.data.business_id}}"
+        }
+      ]
+    }
+  },
+  "required": []
+}
