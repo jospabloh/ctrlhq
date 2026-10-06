@@ -27,10 +27,10 @@ export default function Configuracion() {
       />
       <Tabs defaultValue="payment_methods" className="w-full">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6">
-          <TabsTrigger value="payment_methods">Métodos de Pago</TabsTrigger>
-          <TabsTrigger value="sale_types">Tipos de Venta</TabsTrigger>
-          <TabsTrigger value="collaborators">Colaboradores</TabsTrigger>
-          <TabsTrigger value="suppliers">Proveedores</TabsTrigger>
+          <TabsTrigger value="payment_methods" className="whitespace-normal text-center">Métodos de Pago</TabsTrigger>
+          <TabsTrigger value="sale_types" className="whitespace-normal text-center">Tipos de Venta</TabsTrigger>
+          <TabsTrigger value="collaborators" className="whitespace-normal text-center">Colaboradores</TabsTrigger>
+          <TabsTrigger value="suppliers" className="whitespace-normal text-center">Proveedores</TabsTrigger>
         </TabsList>
         <TabsContent value="payment_methods">
           <CatalogManager entityName="PaymentMethod" label="Método de Pago" />

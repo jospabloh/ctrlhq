@@ -63,7 +63,12 @@ export default function Layout() {
           <img src="/logo-192.png" alt="CtrlHQ" className="w-6 h-6" />
           <span className="font-heading font-semibold">CtrlHQ</span>
         </div>
-        <button onClick={() => setSidebarOpen(!sidebarOpen)}>
+        <button
+          type="button"
+          aria-label={sidebarOpen ? "Cerrar menú" : "Abrir menú"}
+          className="-mr-2 flex h-11 w-11 items-center justify-center rounded-md"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+        >
           {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
@@ -71,7 +76,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed top-0 left-0 z-40 h-full w-64 bg-sidebar border-r border-sidebar-border transition-transform duration-300 lg:translate-x-0",
+          "fixed top-14 lg:top-0 left-0 z-40 h-[calc(100%-3.5rem)] lg:h-full w-64 overflow-y-auto bg-sidebar border-r border-sidebar-border transition-transform duration-300 lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -134,7 +139,7 @@ export default function Layout() {
             {billingBanner.text}
           </div>
         )}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+        <div className="p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8 lg:pb-24 max-w-7xl mx-auto">
           <Outlet />
         </div>
       </main>

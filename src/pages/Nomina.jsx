@@ -239,8 +239,8 @@ export default function Nomina() {
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Nómina" : "Nuevo Registro de Nómina"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-4">
               <div>
                 <Label>Fecha *</Label>
                 <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />

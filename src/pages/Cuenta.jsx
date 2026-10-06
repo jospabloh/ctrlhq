@@ -170,22 +170,22 @@ export default function Cuenta() {
 
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="members">
+          <TabsTrigger value="general" className="whitespace-normal text-center">General</TabsTrigger>
+          <TabsTrigger value="members" className="whitespace-normal text-center">
             Miembros{requests.length > 0 ? ` (${requests.length} por aprobar)` : ""}
           </TabsTrigger>
-          <TabsTrigger value="changelog">Novedades</TabsTrigger>
-          {canDangerZone && <TabsTrigger value="danger" className="text-rose-600">Zona de peligro</TabsTrigger>}
+          <TabsTrigger value="changelog" className="whitespace-normal text-center">Novedades</TabsTrigger>
+          {canDangerZone && <TabsTrigger value="danger" className="whitespace-normal text-center text-rose-600">Zona de peligro</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
           <div className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Negocio</span>
-              <span className="font-medium">{business?.name || "—"}</span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground shrink-0">Negocio</span>
+              <span className="font-medium text-right min-w-0 break-words">{business?.name || "—"}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Plan</span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground shrink-0">Plan</span>
               <span className="font-medium">{business?.license_plan || "—"}</span>
             </div>
             <div className="flex items-center justify-between">
@@ -195,13 +195,13 @@ export default function Cuenta() {
               <span className="text-sm text-muted-foreground">Estatus de licencia</span>
               <span className="font-medium">{BILLING_LABELS[business?.billing_status] || business?.billing_status || "—"}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Tu rol</span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground shrink-0">Tu rol</span>
               <span className="font-medium">{ROLE_LABELS[user?.role] || user?.role}</span>
             </div>
             {business?.invite_code && canManageMembers && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Código de invitación</span>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm text-muted-foreground shrink-0">Código de invitación</span>
                 <span className="font-mono font-medium">{business.invite_code}</span>
               </div>
             )}
@@ -267,12 +267,12 @@ export default function Cuenta() {
             )}
             <div className="bg-card rounded-xl border border-border shadow-sm divide-y divide-border">
               {members.map((m) => (
-                <div key={m.id} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <Users2 className="w-4 h-4 text-muted-foreground" />
-                    <div>
+                <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Users2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
                       <p className="font-medium text-sm">{m.full_name || m.email}</p>
-                      <p className="text-xs text-muted-foreground">{m.email}</p>
+                      <p className="text-xs text-muted-foreground break-all">{m.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
