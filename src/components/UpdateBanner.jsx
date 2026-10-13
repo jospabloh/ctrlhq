@@ -16,6 +16,9 @@ import { useNewVersion } from '@/lib/useNewVersion';
  *
  *   @media (max-width: 1023px) { :root { --update-banner-top: 4rem; } }
  *
+ * An app whose navigation is a full-height side menu (no top bar to sit under)
+ * shifts it right of the menu instead: `--update-banner-left: <menu width>`.
+ *
  * Colours are the app's own semantic tokens, like the theme control.
  */
 export default function UpdateBanner() {
@@ -26,8 +29,8 @@ export default function UpdateBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-x-0 z-50 flex justify-center px-4 pointer-events-none print:hidden"
-      style={{ top: 'var(--update-banner-top, 0.75rem)' }}
+      className="fixed right-0 z-50 flex justify-center px-4 pointer-events-none print:hidden"
+      style={{ top: 'var(--update-banner-top, 0.75rem)', left: 'var(--update-banner-left, 0px)' }}
     >
       <div className="pointer-events-auto flex max-w-md flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg">
         <p className="min-w-0 flex-1">
