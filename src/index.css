@@ -98,3 +98,12 @@
   --theme-switcher-bottom: 1rem;
   --theme-switcher-right: 1rem;
 }
+
+/* New-version notice (src/components/UpdateBanner.jsx) — placement only.
+   Below 1024px Layout.jsx shows a fixed top bar (logo + menu button) that is
+   h-14 = 3.5rem tall: the notice drops beneath it (3.5rem + the default
+   0.75rem gap) instead of covering the menu button. On desktop there is no
+   top bar, so the default 0.75rem stands. */
+@media (max-width: 1023px) {
+  :root { --update-banner-top: 4.25rem; }
+}
