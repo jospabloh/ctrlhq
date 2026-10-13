@@ -19,6 +19,10 @@ import { useNewVersion } from '@/lib/useNewVersion';
  * An app whose navigation is a full-height side menu (no top bar to sit under)
  * shifts it right of the menu instead: `--update-banner-left: <menu width>`.
  *
+ * Below 640px the buttons drop to their own full-width row under the text:
+ * squeezed beside two buttons, the sentence wrapped almost word by word and the
+ * card grew taller than it was wide.
+ *
  * Colours are the app's own semantic tokens, like the theme control.
  */
 export default function UpdateBanner() {
@@ -32,23 +36,23 @@ export default function UpdateBanner() {
       className="fixed right-0 z-50 flex justify-center px-4 pointer-events-none print:hidden"
       style={{ top: 'var(--update-banner-top, 0.75rem)', left: 'var(--update-banner-left, 0px)' }}
     >
-      <div className="pointer-events-auto flex max-w-md flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg">
-        <p className="min-w-0 flex-1">
+      <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3">
+        <p className="min-w-0 sm:flex-1">
           <span className="font-semibold">Hay una versión nueva.</span>{' '}
           <span className="text-muted-foreground">Guarda lo que estés capturando y actualiza.</span>
         </p>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex gap-2 sm:shrink-0">
           <button
             type="button"
             onClick={dismiss}
-            className="min-h-[44px] rounded-lg px-3 text-muted-foreground hover:text-foreground"
+            className="min-h-[44px] flex-1 rounded-lg px-3 text-muted-foreground sm:flex-none hover:text-foreground"
           >
             Más tarde
           </button>
           <button
             type="button"
             onClick={reload}
-            className="min-h-[44px] rounded-lg bg-primary px-4 font-semibold text-primary-foreground hover:opacity-90"
+            className="min-h-[44px] flex-1 rounded-lg bg-primary px-4 sm:flex-none font-semibold text-primary-foreground hover:opacity-90"
           >
             Actualizar
           </button>
