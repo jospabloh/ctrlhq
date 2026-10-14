@@ -21,6 +21,8 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    # A stalled step otherwise runs to GitHub's 6-hour default and bills every minute.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
